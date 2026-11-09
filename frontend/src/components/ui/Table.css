@@ -1,0 +1,75 @@
+.tabla-envoltura {
+  overflow-x: auto;
+}
+
+/* Encabezados fijos al deslizar: en pantallas anchas la tabla no tiene su propio scroll, así el
+   encabezado queda pegado bajo la barra superior. En celular se mantiene el scroll horizontal. */
+@media (min-width: 1001px) {
+  .tabla-envoltura {
+    overflow-x: visible;
+  }
+
+  thead th {
+    position: sticky;
+    top: var(--topbar-height);
+    z-index: 2;
+    box-shadow: inset 0 -1px 0 var(--color-border);
+  }
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th,
+td {
+  padding: 12px var(--space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+th {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+tbody tr:hover td {
+  background: var(--color-surface-muted);
+}
+
+tr:last-child td {
+  border-bottom: 0;
+}
+
+td.num,
+th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+td.hora {
+  white-space: nowrap;
+}
+
+tbody tr.fila-negativa td {
+  background: var(--color-error-soft);
+}
+
+tbody tr.fila-abierta td {
+  background: var(--color-primary-soft);
+}
+
+tbody tr.fila-formulario > td,
+tbody tr.fila-formulario:hover > td {
+  background: var(--color-surface-muted);
+  padding: var(--space-3);
+}

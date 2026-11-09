@@ -1,0 +1,48 @@
+.etiqueta {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+.etiqueta-negativa {
+  background: var(--color-error-soft);
+  color: var(--color-error);
+}
+
+.etiqueta-alerta {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.etiqueta-positiva {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.etiqueta-neutra {
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
+.etiqueta-mayorista {
+  background: var(--color-info-soft);
+  color: var(--color-info);
+}
+
+.semaforo {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-error);
+  flex: none;
+}
+
+.semaforo-amarillo {
+  background: var(--color-warning);
+}

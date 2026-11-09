@@ -1,0 +1,118 @@
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  height: var(--topbar-height);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.topbar__titulo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.topbar__ruta {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.topbar__pagina {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.topbar__derecha {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.topbar__fecha {
+  display: inline-block;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.topbar__fecha::first-letter {
+  text-transform: uppercase;
+}
+
+.topbar__boton {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.topbar__boton:hover {
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+}
+
+.topbar__boton svg {
+  width: 20px;
+  height: 20px;
+}
+
+.topbar__menu {
+  display: none;
+}
+
+.topbar__perfil {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--color-border);
+}
+
+.topbar__avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+}
+
+.topbar__perfil-texto {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  font-size: 13px;
+}
+
+.topbar__perfil-texto span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+@media (max-width: 1000px) {
+  .topbar {
+    padding: 0 var(--space-2);
+  }
+
+  .topbar__menu {
+    display: grid;
+  }
+
+  .topbar__fecha,
+  .topbar__perfil-texto,
+  .topbar__ruta {
+    display: none;
+  }
+}

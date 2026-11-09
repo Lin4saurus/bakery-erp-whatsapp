@@ -1,0 +1,9 @@
+node_modules/
+.env
+*.db
+*.db-journal
+dist/
+frontend/dist/
+backups/
+# Ventas importadas con nombres de clientas reales: solo en la PC de la repostería
+database/prisma/datos/

@@ -1,0 +1,55 @@
+/* Nombre con sugerencias, como un buscador (D44). */
+
+/* Las sugerencias pueden salir del recuadro que contiene al buscador. */
+.panel:has(.buscador) {
+  overflow: visible;
+}
+
+.buscador {
+  position: relative;
+}
+
+.buscador input {
+  width: 100%;
+}
+
+.buscador__lista {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.buscador__opcion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.buscador__opcion--marcada {
+  background: var(--color-primary-soft);
+}
+
+.buscador__nombre strong {
+  color: var(--color-primary);
+}
+
+.buscador__detalle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}

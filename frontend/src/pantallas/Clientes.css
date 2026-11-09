@@ -1,0 +1,82 @@
+.clientes__filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+/* Botones de filtro unidos (Todos / Minoristas / Mayoristas). */
+.clientes__segmentos {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.clientes__segmento {
+  border: 0;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.clientes__segmento:last-child {
+  border-right: 0;
+}
+
+.clientes__segmento:hover {
+  background: var(--color-surface-muted);
+}
+
+.clientes__segmento--activo {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.clientes__detalle {
+  font-size: 12px;
+}
+
+.clientes__acciones {
+  white-space: nowrap;
+}
+
+.clientes__campos {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.clientes__botones {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.clientes__precio {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: end;
+  margin-top: var(--space-2);
+}
+
+@media (max-width: 768px) {
+  .clientes__campos,
+  .clientes__precio {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Buscador de clientes (D44). */
+.clientes__buscar {
+  max-width: 520px;
+}

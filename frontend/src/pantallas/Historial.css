@@ -1,0 +1,182 @@
+.historial__grafico {
+  padding: var(--space-2) var(--space-3) var(--space-3);
+}
+
+.historial__nota {
+  margin: var(--space-2) 0 0;
+  font-size: 12px;
+}
+
+.historial__fila-producto {
+  cursor: pointer;
+}
+
+.historial__fila-producto:hover {
+  background: var(--color-surface-muted);
+}
+
+.historial__fila-producto--activa {
+  background: var(--color-primary-soft);
+}
+
+.historial__erp {
+  margin-left: var(--space-1);
+}
+
+.historial__original {
+  font-size: 12px;
+}
+
+.historial__filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) 0;
+}
+
+.historial__filtros > * {
+  flex: 1 1 200px;
+  max-width: 320px;
+}
+
+/* Pestañas: ventas del sistema / notas 2026 / Excel 2024. */
+.historial__vistas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.historial__vista {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--color-text-secondary);
+  font: inherit;
+  padding: var(--space-1) var(--space-2);
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+
+.historial__vista:hover {
+  color: var(--color-text);
+}
+
+.historial__vista--activa {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.historial__filtros--arriba {
+  padding: 0;
+  margin-bottom: var(--space-3);
+  align-items: flex-end;
+}
+
+.historial__filtros--arriba > .boton {
+  flex: none;
+  height: 40px;
+}
+
+.historial__anulada td {
+  color: var(--color-text-secondary);
+  text-decoration: line-through;
+}
+
+/* Selector de año en la cabecera: compacto, se elige con dos clics. */
+.historial__anio {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.historial__anio select {
+  font-size: 16px;
+  font-weight: 600;
+  min-width: 200px;
+}
+
+/* Meses bajo el gráfico: tocar uno filtra la tabla de ventas. */
+.historial__meses {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 2px;
+  margin-top: var(--space-1);
+}
+
+.historial__mes {
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.historial__mes:hover:not(:disabled) {
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.historial__mes:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.historial__mes--activo {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+
+/* Los botones de mes hacen de etiqueta del gráfico (no se repiten los meses). */
+.historial__grafico .bar-chart__etiquetas {
+  display: none;
+}
+
+/* Corregir / eliminar una venta (D43). */
+.historial__acciones {
+  white-space: nowrap;
+}
+
+.historial__mensaje {
+  padding: var(--space-2) var(--space-3) 0;
+}
+
+.historial__editor {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr)) auto;
+  gap: var(--space-2);
+  /* Arriba: así las etiquetas y los campos quedan en la misma línea aunque algunos tengan ayuda debajo. */
+  align-items: start;
+}
+
+.historial__editor-error,
+.historial__editor-nota {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.historial__editor-botones {
+  flex-wrap: nowrap;
+}
+
+.historial__confirmar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+@media (max-width: 900px) {
+  .historial__editor {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

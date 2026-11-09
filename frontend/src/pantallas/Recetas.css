@@ -1,0 +1,84 @@
+.recetas {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.lista-productos {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1);
+}
+
+.lista-productos li button {
+  width: 100%;
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.lista-productos li button:hover {
+  background: var(--color-surface-muted);
+}
+
+.lista-productos li button.activo {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.lista-grupo {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+  padding: 12px 12px 4px;
+}
+
+@media (max-width: 1200px) {
+  .recetas {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Datos del producto: todos los campos alineados arriba en una fila, más compactos. */
+.recetas__datos {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  align-items: start;
+  gap: var(--space-2) 12px;
+}
+
+.recetas__datos .campo-etiqueta {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recetas__datos > .campo:first-child {
+  grid-column: span 2;
+}
+
+.recetas__datos input,
+.recetas__datos select {
+  padding: 7px 10px;
+}
+
+/* Costo, precio y ganancia: tarjetas más bajas. */
+.recetas__tarjetas .tarjeta {
+  padding: 12px var(--space-2);
+}
+
+.recetas__tarjetas .tarjeta-valor {
+  font-size: 20px;
+  margin-top: 4px;
+}

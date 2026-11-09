@@ -1,0 +1,94 @@
+.formulario {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.campo-etiqueta {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.campo-equivalencia {
+  align-self: flex-start;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 15px;
+}
+
+.campo-equivalencia strong {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.campo-ayuda {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+input,
+select {
+  border: 1px solid var(--color-input-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-size: 14px;
+  min-width: 0;
+}
+
+input::placeholder {
+  color: var(--color-text-secondary);
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-soft);
+}
+
+input:disabled,
+select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.casilla {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.casilla:has(input:checked) {
+  border-color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+
+.casilla input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  padding: 0;
+  accent-color: var(--color-primary);
+  flex: none;
+}
+
+input.chico {
+  width: 112px;
+  text-align: right;
+}

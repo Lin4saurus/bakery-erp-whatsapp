@@ -1,0 +1,244 @@
+.inicio__tarjetas {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.inicio-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 14px 16px;
+}
+
+.inicio-card__cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.inicio-card__titulo {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.inicio-card__icono {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  display: grid;
+  place-items: center;
+}
+
+.inicio-card__icono svg {
+  width: 18px;
+  height: 18px;
+}
+
+.inicio-card__icono--alerta {
+  background: var(--color-error-soft);
+  color: var(--color-error);
+}
+
+.inicio-card__valor {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.inicio-card__subtitulo {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+}
+
+.inicio-card__lista {
+  margin: auto 0 0;
+  padding-top: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.inicio-card__lista div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-1);
+  border-top: 1px solid var(--color-border);
+  padding-top: 6px;
+}
+
+.inicio-card__lista dt {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.inicio-card__lista dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.inicio-card__enlace-dato {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--color-border);
+  text-underline-offset: 3px;
+}
+
+.inicio-card__enlace-dato:hover {
+  color: var(--color-primary);
+  text-decoration-color: currentColor;
+}
+
+.inicio-card__por-cobrar {
+  color: var(--color-warning);
+}
+
+.inicio-card__cuenta {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.inicio-card--accion .secundario {
+  margin-bottom: var(--space-2);
+}
+
+.inicio-card__boton-venta {
+  margin-top: auto;
+  min-height: 52px;
+}
+
+.inicio-card__boton-venta svg {
+  width: 22px;
+  height: 22px;
+}
+
+.inicio-alertas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.inicio-alertas li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.inicio-alertas__nombre {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inicio-alertas__stock {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-error);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.inicio-card__enlace {
+  margin-top: auto;
+  padding-top: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.inicio-card__enlace:hover {
+  text-decoration: underline;
+}
+
+.inicio-card__ok {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  color: var(--color-success);
+}
+
+.inicio-card__pie {
+  margin-top: auto;
+  padding-top: var(--space-1);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 1280px) {
+  .inicio__tarjetas {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .inicio__tarjetas {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Utilidad neta: la línea del día se resalta y el mes va al pie de la tarjeta Caja. */
+.inicio-card__lista .inicio-card__neta dt {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.inicio-card__mes {
+  margin-top: 10px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px var(--space-1);
+  font-size: 13px;
+}
+
+.inicio-card__mes span:first-child {
+  color: var(--color-text-secondary);
+}
+
+.inicio-card__mes strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.inicio-card__mes-detalle {
+  grid-column: 1 / -1;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+/* Segunda fila: punto de equilibrio y top clientes mayoristas. */
+.inicio__indicadores {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+@media (max-width: 768px) {
+  .inicio__indicadores {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+

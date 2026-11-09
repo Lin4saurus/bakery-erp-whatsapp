@@ -1,0 +1,255 @@
+// ERP Dulzura - Esquema inicial (Fase 1)
+// Todos los montos (Bs) y cantidades (g / ml / unidades) usan Decimal para evitar errores de redondeo.
+// El costo unitario de un insumo NO se guarda: se calcula como precioEnvase / contenidoEnvase.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UnidadMedida {
+  GRAMO
+  MILILITRO
+  UNIDAD
+}
+
+enum CategoriaInsumo {
+  MATERIA_PRIMA   // harina, azúcar, mantequilla...
+  EMPAQUE         // platillos, etiquetas, envases
+  GASTO_INDIRECTO // limpieza y otros
+}
+
+enum TipoProducto {
+  VENTA      // se vende en caja (ej. Queque)
+  INTERMEDIO // sub-receta que solo se usa dentro de otras (ej. Relleno de Nido)
+}
+
+enum EstadoPago {
+  PAGADO
+  PENDIENTE // fiado: se entregó y se cobra después
+}
+
+
+enum TipoMovimiento {
+  COMPRA // entrada de insumo comprado (+)
+  AJUSTE // corrección manual: conteo físico, merma, vencimiento (+ o −)
+  VENTA  // salida automática al registrar una venta (−)
+  ANULACION // devolución al anular una venta (+)
+}
+
+model Insumo {
+  id              Int             @id @default(autoincrement())
+  nombre          String          @unique
+  categoria       CategoriaInsumo @default(MATERIA_PRIMA)
+  unidadBase      UnidadMedida
+  contenidoEnvase Decimal // cantidad en unidadBase que trae un envase (ej. 50000 g)
+  precioEnvase    Decimal // Bs pagados por un envase (ej. 320 Bs)
+  stockActual     Decimal         @default(0) // en unidadBase
+  stockMinimo     Decimal         @default(0) // umbral para alerta de stock bajo
+  // false = «No llevar stock» (agua de la casa, limpieza): no se descuenta, no alerta, sí cuesta (D40).
+  controlaStock   Boolean         @default(true)
+  activo          Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  ingredientes IngredienteReceta[]
+  movimientos  MovimientoInventario[]
+}
+
+model Producto {
+  id                Int          @id @default(autoincrement())
+  nombre            String       @unique
+  categoria         String // ej. "Queques", "Rellenos"
+  tipo              TipoProducto @default(VENTA)
+  rendimientoReceta Decimal // lo que sale de una tanda, en unidadRendimiento (ej. 4.75 queques, 1240 g de relleno)
+  unidadRendimiento UnidadMedida @default(UNIDAD)
+  precioVenta       Decimal? // Bs, venta en tienda (null en INTERMEDIO)
+  activo            Boolean      @default(true) // sigue en el catálogo; false = retirado (ej. receta histórica)
+  disponible        Boolean      @default(true) // a la venta ahora en la Caja (productos de temporada se apagan)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  ingredientes IngredienteReceta[]
+  subRecetas   ComponenteReceta[]  @relation("ProductoPadre")
+  usadoEn      ComponenteReceta[]  @relation("SubReceta")
+  ventas       Venta[]
+  ventasHistoricas VentaHistorica[]
+  preciosCliente   PrecioCliente[]
+}
+
+// Receta (BOM): cantidad de cada insumo para UNA tanda del producto.
+model IngredienteReceta {
+  id         Int     @id @default(autoincrement())
+  productoId Int
+  insumoId   Int
+  cantidad   Decimal // en unidadBase del insumo
+
+  producto Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  insumo   Insumo   @relation(fields: [insumoId], references: [id], onDelete: Restrict)
+
+  @@unique([productoId, insumoId])
+  @@index([insumoId])
+}
+
+// Sub-receta: un producto INTERMEDIO usado dentro de otra receta (ej. 350 g de Relleno de Nido por tanda).
+// Costo y descuento de inventario: cantidad / rendimientoReceta del intermedio × su receta.
+model ComponenteReceta {
+  id            Int     @id @default(autoincrement())
+  productoId    Int
+  subProductoId Int
+  cantidad      Decimal // en unidadRendimiento del sub-producto
+
+  producto    Producto @relation("ProductoPadre", fields: [productoId], references: [id], onDelete: Cascade)
+  subProducto Producto @relation("SubReceta", fields: [subProductoId], references: [id], onDelete: Restrict)
+
+  @@unique([productoId, subProductoId])
+  @@index([subProductoId])
+}
+
+// Los costos se guardan como "foto" al momento de vender, para que cambios
+// futuros de precios de insumos no alteren la ganancia histórica.
+model Venta {
+  id             Int        @id @default(autoincrement())
+  productoId     Int
+  cantidad       Decimal // unidades vendidas
+  precioUnitario Decimal // Bs cobrados por unidad
+  costoUnitario  Decimal // Bs, costo real por unidad (receta / rendimiento)
+  totalVenta     Decimal // precioUnitario * cantidad
+  costoTotal     Decimal // costoUnitario * cantidad
+  gananciaBruta  Decimal // totalVenta - costoTotal
+  estadoPago     EstadoPago @default(PAGADO)
+  cliente        String? // nombre: obligatorio en fiados; con clienteId se copia el nombre del cliente
+  clienteId      String? // cliente registrado (mayorista o minorista con ficha)
+  sabores        String? // desglose de sabores, separado por comas (ej. "Coco, Oreo")
+  pedidoId       String? // las líneas de un mismo pedido de la Caja comparten este id (D48); null = venta suelta anterior
+  fechaPago      DateTime? // cuándo se cobró (ventas que fueron fiadas)
+  anulada         Boolean   @default(false) // no cuenta en totales; su stock se devolvió
+  fechaAnulacion  DateTime?
+  motivoAnulacion String?
+  fecha          DateTime   @default(now())
+
+  producto          Producto               @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  clienteRegistrado Cliente?               @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  movimientos       MovimientoInventario[]
+
+  @@index([fecha])
+  @@index([productoId])
+  @@index([estadoPago])
+  @@index([clienteId])
+  @@index([pedidoId])
+}
+
+// Bitácora del stock: cada cambio de Insumo.stockActual deja un registro.
+model MovimientoInventario {
+  id              Int            @id @default(autoincrement())
+  insumoId        Int
+  tipo            TipoMovimiento
+  cantidad        Decimal // en unidadBase; positivo = entra, negativo = sale
+  stockResultante Decimal // stock del insumo después del movimiento
+  ventaId         Int? // solo en movimientos de tipo VENTA
+  nota            String?
+  fecha           DateTime       @default(now())
+
+  insumo Insumo @relation(fields: [insumoId], references: [id], onDelete: Restrict)
+  venta  Venta? @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+
+  @@index([insumoId, fecha])
+  @@index([ventaId])
+}
+
+// Ventas anteriores al sistema, importadas del Excel (CONTEXT.md D24). Solo para consulta:
+// no descuentan inventario ni cuentan en la Caja ni en el dashboard del día.
+model VentaHistorica {
+  id               Int        @id @default(autoincrement())
+  hoja             String // hoja del Excel de origen
+  fila             Int // fila en esa hoja; con la hoja identifica la venta (reimportar no duplica)
+  fecha            DateTime // día de la venta (mediodía, hora local)
+  fechaEstimada    Boolean    @default(false) // la hoja solo decía el día de la semana
+  productoOriginal String // tal como se escribió en el Excel
+  productoNombre   String // agrupado, sin errores de tipeo
+  productoId       Int? // producto del ERP, si existe
+  cantidad         Decimal
+  valor            Decimal // Bs cobrados por toda la fila
+  comision         Decimal    @default(0) // comisión de PedidosYa de esa época (D9: ya no se usa)
+  costo            Decimal? // tal como figura en el Excel; null si no se conoce (notas de 2026)
+  utilidad         Decimal? // tal como figura en el Excel; null si no se conoce
+  cliente          String? // solo el nombre; sin correo ni celular
+  clienteId        String? // cliente registrado, si se identificó
+  sabores          String? // desglose de sabores, separado por comas
+  // Correcciones de la dueña desde el Historial (D43): reimportar el Excel/notas no las pisa.
+  editada          Boolean    @default(false)
+  eliminada        Boolean    @default(false) // no se muestra ni suma; queda para que reimportar no la reviva
+
+  producto          Producto? @relation(fields: [productoId], references: [id], onDelete: SetNull)
+  clienteRegistrado Cliente?  @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+
+  @@unique([hoja, fila])
+  @@index([fecha])
+  @@index([productoId])
+  @@index([clienteId])
+}
+
+enum CategoriaGasto {
+  LIMPIEZA     // esponjas, lavavajillas…
+  EQUIPAMIENTO // moldes, toppers…
+  USO_PERSONAL // lo que la dueña gasta en sí misma con plata del negocio
+  OTROS
+}
+
+// Gastos operativos puntuales que no son insumos de receta. Se restan de la ganancia bruta
+// para la utilidad neta. Los servicios básicos (luz, gas, agua) no se cargan: se comparten con la familia.
+model GastoOperativo {
+  id          String         @id @default(uuid())
+  fecha       DateTime       @default(now())
+  descripcion String
+  monto       Decimal // Bs
+  categoria   CategoriaGasto
+  createdAt   DateTime       @default(now())
+
+  @@index([fecha])
+}
+
+// ---------- Fase 8: clientes y listas de precios ----------
+
+enum TipoCliente {
+  MINORISTA
+  MAYORISTA
+}
+
+// Clientes recurrentes. No se borran: se desactivan (activo = false) para conservar su historial.
+model Cliente {
+  id             String      @id @default(uuid())
+  nombre         String      @unique
+  tipo           TipoCliente @default(MINORISTA)
+  celular        String?
+  email          String?
+  direccion      String?
+  activo         Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  precios          PrecioCliente[] // precio negociado con este cliente, por producto (D42)
+  ventas           Venta[]
+  ventasHistoricas VentaHistorica[]
+}
+
+// Precio acordado con un cliente para un producto (cada mayorista negocia el suyo, D42).
+// Sin precio acordado se cobra el precio de venta del producto.
+model PrecioCliente {
+  id         String   @id @default(uuid())
+  clienteId  String
+  productoId Int
+  precio     Decimal // Bs por unidad
+  updatedAt  DateTime @updatedAt
+
+  cliente  Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  producto Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+
+  @@unique([clienteId, productoId])
+  @@index([productoId])
+}
+

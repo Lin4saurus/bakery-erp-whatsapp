@@ -1,0 +1,79 @@
+.ventana-fondo {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3);
+  background: rgba(0, 0, 0, 0.55);
+  animation: ventana-aparece 0.12s ease-out;
+}
+
+.ventana {
+  display: flex;
+  flex-direction: column;
+  width: min(860px, 100%);
+  max-height: min(85vh, 900px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.ventana__cabecera {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 14px var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ventana__titulo {
+  margin: 0;
+  font-size: 18px;
+}
+
+.ventana__subtitulo {
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.ventana__cerrar {
+  display: inline-flex;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-secondary);
+  font-size: 22px;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.ventana__cerrar:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+/* Solo se desliza el contenido; el encabezado de la tabla queda fijo dentro de la ventana. */
+.ventana__cuerpo {
+  overflow: auto;
+}
+
+.ventana__cuerpo .tabla-envoltura {
+  overflow-x: visible;
+}
+
+.ventana__cuerpo thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+@keyframes ventana-aparece {
+  from {
+    opacity: 0;
+  }
+}

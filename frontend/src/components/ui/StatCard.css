@@ -1,0 +1,53 @@
+.tarjeta {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 20px var(--space-3);
+  box-shadow: var(--shadow-sm);
+}
+
+.tarjeta-texto {
+  min-width: 0;
+}
+
+.tarjeta-titulo {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tarjeta-valor {
+  font-size: 24px;
+  font-weight: 600;
+  margin-top: var(--space-1);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.tarjeta-detalle {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.tarjeta-icono {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  display: grid;
+  place-items: center;
+}
+
+.tarjeta-icono svg {
+  width: 20px;
+  height: 20px;
+}

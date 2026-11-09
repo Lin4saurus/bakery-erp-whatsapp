@@ -1,0 +1,45 @@
+{
+  "name": "dulzura-erp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ERP local para la repostería Dulzura",
+  "prisma": {
+    "schema": "database/prisma/schema.prisma",
+    "seed": "tsx database/prisma/seed.ts"
+  },
+  "scripts": {
+    "db:validate": "prisma validate",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "prisma db seed",
+    "db:reset": "prisma migrate reset --force",
+    "db:check": "tsx database/prisma/check-seed.ts",
+    "db:historico": "tsx database/prisma/importar-historico.ts",
+    "backup": "tsx backend/src/backup.ts",
+    "dev": "tsx watch backend/src/server.ts",
+    "start": "tsx backend/src/server.ts",
+    "test": "tsx --test backend/test/api.test.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p frontend",
+    "web": "vite --config frontend/vite.config.ts",
+    "web:build": "vite build --config frontend/vite.config.ts"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-sans": "5.1.0",
+    "@prisma/client": "6.16.2",
+    "express": "5.1.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-icons": "5.4.0",
+    "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.1",
+    "@types/node": "22.10.2",
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5",
+    "@vitejs/plugin-react": "4.3.4",
+    "prisma": "6.16.2",
+    "tsx": "4.19.2",
+    "typescript": "5.7.2",
+    "vite": "6.0.7"
+  }
+}

@@ -1,0 +1,90 @@
+.boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  padding: 9px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.boton:hover {
+  background: var(--color-surface-muted);
+}
+
+.boton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.boton svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.boton-primario {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.boton-primario:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.boton-exito {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: #ffffff;
+}
+
+.boton-exito:hover:not(:disabled) {
+  background: var(--color-success-hover);
+  border-color: var(--color-success-hover);
+}
+
+:root[data-theme="dark"] .boton-exito {
+  color: #10170f;
+}
+
+.boton-peligro {
+  color: var(--color-error);
+}
+
+.boton-texto {
+  border-color: transparent;
+  background: none;
+  color: var(--color-primary);
+  padding: 4px 8px;
+}
+
+.boton-texto:hover {
+  background: var(--color-primary-soft);
+}
+
+.boton-chico {
+  padding: 5px 12px;
+  font-size: 13px;
+}
+
+.boton-grande {
+  width: 100%;
+  padding: 14px 20px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.boton-icono {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}

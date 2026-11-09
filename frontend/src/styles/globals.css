@@ -1,0 +1,188 @@
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+
+:root,
+:root[data-theme="light"] {
+  --color-bg: #f6f6f6;
+  --color-surface: #ffffff;
+  --color-surface-muted: #fafafa;
+  --color-text: #1a1a1a;
+  --color-text-secondary: #6b6b6b;
+  --color-border: #e5e5e5;
+  --color-input-border: #d1d1d1;
+
+  --color-primary: #8b6f47;
+  --color-primary-hover: #765d3b;
+  --color-primary-soft: #f3eee7;
+  --color-on-primary: #ffffff;
+
+  --color-success: #1e7a3c;
+  --color-success-hover: #186531;
+  --color-success-soft: #e8f3ec;
+  --color-error: #c8102e;
+  --color-error-soft: #fbe9ec;
+  --color-warning: #8a5a00;
+  --color-warning-soft: #fdf3e1;
+  --color-info: #2b5c8a; /* solo para la etiqueta «Mayorista» */
+  --color-info-soft: #e8f0f8;
+
+  --color-chart-bar: #8b6f47;
+  --color-chart-bar-muted: #d9cdbd;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.08);
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --color-bg: #15171a;
+  --color-surface: #1e2125;
+  --color-surface-muted: #24282d;
+  --color-text: #e6e6e6;
+  --color-text-secondary: #9b9ea3;
+  --color-border: #2f3338;
+  --color-input-border: #40454c;
+
+  --color-primary: #c4a57a;
+  --color-primary-hover: #d2b68f;
+  --color-primary-soft: #2c2721;
+  --color-on-primary: #1a1a1a;
+
+  --color-success: #4caf6e;
+  --color-success-hover: #5cbd7d;
+  --color-success-soft: #1c2b21;
+  --color-error: #ef5b6b;
+  --color-error-soft: #33201f;
+  --color-warning: #e0a73a;
+  --color-warning-soft: #2e2618;
+  --color-info: #7fb0e0;
+  --color-info-soft: #1d2733;
+
+  --color-chart-bar: #c4a57a;
+  --color-chart-bar-muted: #3d3832;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.4);
+
+  color-scheme: dark;
+}
+
+:root {
+  --font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 40px;
+  --space-6: 48px;
+  --sidebar-width: 240px;
+  --topbar-height: 64px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+h1 {
+  font-size: 28px;
+}
+
+h2 {
+  font-size: 22px;
+}
+
+h3 {
+  font-size: 15px;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--color-primary);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.secundario {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.positivo {
+  color: var(--color-success);
+}
+
+.negativo {
+  color: var(--color-error);
+}
+
+.vacio {
+  color: var(--color-text-secondary);
+  padding: var(--space-2) var(--space-3);
+}
+
+.grilla-tarjetas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.dos-columnas {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+/* Lado a lado no se separan hacia abajo (la regla .panel + .panel es para paneles apilados). */
+.dos-columnas > .panel + .panel {
+  margin-top: 0;
+}
+
+.fila-botones {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+@media (max-width: 1000px) {
+  .dos-columnas {
+    grid-template-columns: 1fr;
+  }
+}

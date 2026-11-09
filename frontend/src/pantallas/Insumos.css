@@ -1,0 +1,117 @@
+/* Paneles de Editar, Compra y Ajuste: usan todo el ancho de la fila (datos · datos · resumen). */
+.panel-insumo {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) minmax(240px, 1.3fr) minmax(300px, 1.5fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.panel-insumo__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.panel-insumo__motivos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.panel-insumo__chip {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.panel-insumo__chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.panel-insumo__chip:hover:not(:disabled) {
+  color: var(--color-text);
+}
+
+.panel-insumo__chip--elegido {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.panel-insumo__resumen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.panel-insumo__cifras {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.panel-insumo__cifras > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.panel-insumo__cifras span {
+  font-size: 12px;
+}
+
+.panel-insumo__cifras strong {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.panel-insumo__flecha {
+  font-size: 20px;
+  color: var(--color-text-secondary);
+}
+
+.panel-insumo__linea {
+  font-size: 14px;
+}
+
+.panel-insumo__diferencia {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.panel-insumo__diferencia--resta {
+  color: var(--color-error);
+}
+
+.panel-insumo__diferencia--suma {
+  color: var(--color-success);
+}
+
+@media (max-width: 900px) {
+  .panel-insumo {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Insumo sin control de stock (D40). */
+.insumo__infinito {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--color-info);
+}
+
+/* Botones de cada fila en una sola línea. */
+.insumo__acciones {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
