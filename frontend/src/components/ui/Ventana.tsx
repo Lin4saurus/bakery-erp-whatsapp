@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { MdClose } from "react-icons/md";
+import { createPortal } from "react-dom";
 import "./Ventana.css";
 
 // Ventana emergente: se cierra con la X, con Esc o tocando fuera. La página de atrás no se desliza.
@@ -27,7 +28,8 @@ export function Ventana({
     };
   }, [cerrar]);
 
-  return (
+  // Se dibuja en <body> para quedar encima de todo, aunque la pantalla tenga zoom o su propio apilamiento.
+  return createPortal(
     <div className="ventana-fondo" onMouseDown={(e) => e.target === e.currentTarget && cerrar()}>
       <div className="ventana" role="dialog" aria-modal="true">
         <div className="ventana__cabecera">
@@ -41,6 +43,7 @@ export function Ventana({
         </div>
         <div className="ventana__cuerpo">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

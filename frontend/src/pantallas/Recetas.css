@@ -82,3 +82,99 @@
   font-size: 20px;
   margin-top: 4px;
 }
+
+/* Separador «Ingredientes» / «Empaques» en la tabla de la receta (D60). */
+.recetas__grupo td {
+  background: var(--color-surface-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-primary);
+  padding-top: 8px;
+  padding-bottom: 4px;
+}
+
+/* Productos de venta por familia (D61): ▶ Queques despliega ├─ / └─ sus productos. */
+.lista-productos li button.lista-familia {
+  font-weight: 600;
+}
+
+.lista-familia__flecha {
+  display: inline-block;
+  width: 12px;
+  color: var(--color-primary);
+  font-size: 10px;
+}
+
+.lista-productos--hijos {
+  padding: 0;
+}
+
+.lista-productos--hijos li button {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: 13px;
+}
+
+.lista-rama {
+  color: var(--color-text-secondary);
+  font-family: monospace;
+  padding-left: 6px;
+}
+
+/* Confirmación de «Borrar receta» (D63). */
+.recetas__borrar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 12px var(--space-2);
+  margin-bottom: var(--space-2);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+}
+
+/* Borrar una categoría (D64): el ícono aparece al pasar el mouse por la familia. */
+.lista-familia__fila {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.lista-familia__fila .lista-familia {
+  flex: 1;
+  min-width: 0;
+}
+
+.lista-productos li button.lista-familia__borrar {
+  width: auto;
+  flex: none;
+  padding: 6px;
+  color: var(--color-text-secondary);
+  font-size: 16px;
+  opacity: 0;
+}
+
+.lista-familia__fila:hover .lista-familia__borrar,
+.lista-productos li button.lista-familia__borrar:focus-visible {
+  opacity: 1;
+}
+
+.lista-productos li button.lista-familia__borrar:hover {
+  color: var(--color-error);
+}
+
+.recetas__borrar-categoria {
+  display: grid;
+  gap: 12px;
+  max-width: 520px;
+}
+
+.recetas__borrar-categoria ul {
+  margin: 0;
+  padding-left: 20px;
+  columns: 2;
+}

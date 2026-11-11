@@ -22,8 +22,6 @@ const editarSchema = z
       .optional(),
     cantidad: decimalPositivo.optional(),
     valor: decimalNoNegativo.optional(),
-    clienteId: z.string().uuid("Debe ser un id de cliente válido.").nullable().optional(),
-    sabores: z.string().trim().max(300).nullable().optional(),
   })
   .refine(alMenosUnCampo, "Envía al menos un campo para corregir.");
 
@@ -54,10 +52,17 @@ const lunesDe = (fecha: Date): string => {
   return lunes.toLocaleDateString("sv-SE");
 };
 
+// Una nota de varios sabores son varias líneas con la misma hoja + fila (D57): cuenta como un pedido.
+const clavePedido = (v: VentaHistorica) => `${v.hoja}|${v.fila}`;
+const totalizar = (ventas: VentaHistorica[]): Totales => ({
+  ...ventas.reduce(sumar, vacio()),
+  ventas: new Set(ventas.map(clavePedido)).size,
+});
+
 function agrupar(ventas: VentaHistorica[], clave: (v: VentaHistorica) => string): Map<string, Totales> {
-  const grupos = new Map<string, Totales>();
-  for (const v of ventas) grupos.set(clave(v), sumar(grupos.get(clave(v)) ?? vacio(), v));
-  return grupos;
+  const grupos = new Map<string, VentaHistorica[]>();
+  for (const v of ventas) grupos.set(clave(v), [...(grupos.get(clave(v)) ?? []), v]);
+  return new Map([...grupos].map(([k, vs]) => [k, totalizar(vs)]));
 }
 
 export const historicoRouter = Router();
@@ -72,11 +77,14 @@ historicoRouter.get("/", async (req, res) => {
 
   const conCliente = await prisma.ventaHistorica.findMany({
     where: { fecha, eliminada: false },
-    include: { clienteRegistrado: { select: { tipo: true } } },
-    orderBy: [{ fecha: "asc" }, { hoja: "asc" }, { fila: "asc" }],
+    include: { clienteRegistrado: { select: { tipo: true } }, producto: { select: { categoria: true } } },
+    orderBy: [{ fecha: "asc" }, { hoja: "asc" }, { fila: "asc" }, { linea: "asc" }],
   });
   const tipos = new Map<number, TipoCliente | null>(conCliente.map((v) => [v.id, v.clienteRegistrado?.tipo ?? null]));
-  const ventas: VentaHistorica[] = conCliente.map(({ clienteRegistrado: _cliente, ...v }) => v);
+  const familias = new Map<number, string | null>(conCliente.map((v) => [v.id, v.producto?.categoria ?? null]));
+  const ventas: VentaHistorica[] = conCliente.map(({ clienteRegistrado: _cliente, producto: _producto, ...v }) => v);
+  const lineasPorPedido = new Map<string, number>();
+  for (const v of ventas) lineasPorPedido.set(clavePedido(v), (lineasPorPedido.get(clavePedido(v)) ?? 0) + 1);
 
   const semanas = [...agrupar(ventas, (v) => lunesDe(v.fecha))].map(([semana, totales]) => ({ semana, ...totales }));
   const productoIds = new Map(ventas.map((v) => [v.productoNombre, v.productoId]));
@@ -85,12 +93,15 @@ historicoRouter.get("/", async (req, res) => {
     .sort((a, b) => b.valor.comparedTo(a.valor));
 
   res.json({
-    resumen: ventas.reduce(sumar, vacio()),
+    resumen: totalizar(ventas),
     semanas,
     productos,
-    ventas: ventas.map(({ hoja: _hoja, fila: _fila, editada: _editada, eliminada: _eliminada, ...v }) => ({
+    ventas: ventas.map(({ hoja, fila, editada: _editada, eliminada: _eliminada, ...v }) => ({
       ...v,
       clienteTipo: tipos.get(v.id) ?? null,
+      familia: familias.get(v.id) ?? null, // Queques, Brownies… (D55)
+      // Las líneas de una misma nota se muestran como un pedido desplegable, como los de la Caja (D57).
+      pedidoId: (lineasPorPedido.get(`${hoja}|${fila}`) ?? 0) > 1 ? `h-${hoja}-${fila}` : null,
     })),
   });
 });
@@ -113,13 +124,6 @@ historicoRouter.patch("/:id", async (req, res) => {
   const costo = venta.costo === null ? null : venta.costo.mul(cantidad).div(venta.cantidad);
   const utilidad =
     venta.utilidad === null ? null : venta.utilidad.add(valor.sub(venta.valor)).sub((costo ?? venta.costo ?? cero).sub(venta.costo ?? cero));
-  let cliente: { cliente: string | null; clienteId: string | null } | undefined;
-  if (datos.clienteId === null) cliente = { cliente: null, clienteId: null };
-  else if (datos.clienteId) {
-    const ficha = await prisma.cliente.findUnique({ where: { id: datos.clienteId } });
-    if (!ficha) throw new AppError(404, `No existe el cliente ${datos.clienteId}.`);
-    cliente = { cliente: ficha.nombre, clienteId: ficha.id };
-  }
 
   const actualizada = await prisma.ventaHistorica.update({
     where: { id },
@@ -129,8 +133,6 @@ historicoRouter.patch("/:id", async (req, res) => {
       costo,
       utilidad,
       ...(datos.fecha ? { fecha: new Date(`${datos.fecha}T12:00:00`), fechaEstimada: false } : {}),
-      ...(cliente ?? {}),
-      ...(datos.sabores !== undefined ? { sabores: datos.sabores || null } : {}),
       editada: true,
     },
   });
@@ -147,3 +149,13 @@ historicoRouter.delete("/:id", async (req, res) => {
   res.json({ eliminada: id });
 });
 
+// Elimina todas las líneas (sabores) de una misma nota a partir de cualquiera de ellas (D57).
+historicoRouter.delete("/:id/pedido", async (req, res) => {
+  const id = parseId(req.params.id);
+  const venta = await buscarVigente(id);
+  const { count } = await prisma.ventaHistorica.updateMany({
+    where: { hoja: venta.hoja, fila: venta.fila, eliminada: false },
+    data: { eliminada: true, editada: true },
+  });
+  res.json({ eliminadas: count });
+});

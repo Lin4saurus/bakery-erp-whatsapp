@@ -1,9 +1,50 @@
 .gastos__formulario {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: var(--space-2);
-  align-items: end;
+  align-items: start;
   padding: var(--space-3);
+}
+
+.gastos__formulario .campo-etiqueta {
+  white-space: nowrap;
+}
+
+/* Envases o cantidad: el mismo campo, con un enlace para cambiar de modo. */
+.gastos__cuanto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gastos__cuanto input {
+  width: 100%;
+}
+
+.gastos__modo {
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 0;
+}
+
+.gastos__nota p {
+  margin: 0 0 6px;
+}
+
+.gastos__precio {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.gastos__precio input {
+  margin-top: 2px;
 }
 
 .gastos__nota {
@@ -12,7 +53,8 @@
 }
 
 .gastos__guardar {
-  height: 40px;
+  width: 100%;
+  height: 41px; /* mismo alto que los campos */
 }
 
 .gastos__acciones {
@@ -28,8 +70,7 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
-  .gastos__formulario > :first-child,
-  .gastos__guardar {
+  .gastos__formulario > .campo:last-child {
     grid-column: 1 / -1;
   }
 }

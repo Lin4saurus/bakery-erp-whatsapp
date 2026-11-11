@@ -129,3 +129,153 @@
     z-index: 15;
   }
 }
+
+/* Botón para colapsar (D62). */
+.sidebar__colapsar {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.sidebar__colapsar:hover {
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+}
+
+/* Menú más angosto: menos espacio vacío a la derecha de los nombres. */
+.sidebar__marca {
+  padding: 0 12px 0 var(--space-2);
+}
+
+.sidebar__nav {
+  padding: var(--space-2) 10px;
+}
+
+.sidebar__item--activo::before {
+  left: -10px;
+}
+
+.sidebar__pie {
+  padding: 12px var(--space-2);
+}
+
+/* Colapsado: solo íconos; el nombre aparece al pasar el mouse (title). */
+@media (min-width: 1001px) {
+  .sidebar--colapsado .sidebar__marca {
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    padding: 0;
+  }
+
+  .sidebar--colapsado .sidebar__nombre,
+  .sidebar--colapsado .sidebar__texto {
+    display: none;
+  }
+
+  .sidebar--colapsado .sidebar__logo {
+    display: none;
+  }
+
+  .sidebar--colapsado .sidebar__colapsar {
+    margin: 0;
+  }
+
+  .sidebar--colapsado .sidebar__titulo-seccion {
+    font-size: 0;
+    padding: 0;
+    margin: 6px 8px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .sidebar--colapsado .sidebar__seccion:first-child .sidebar__titulo-seccion {
+    border-top: 0;
+    margin: 0;
+  }
+
+  .sidebar--colapsado .sidebar__item {
+    justify-content: center;
+    padding: 10px 0;
+  }
+
+  .sidebar--colapsado .sidebar__pie {
+    padding: 12px 0;
+    display: grid;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 1000px) {
+  .sidebar__colapsar {
+    display: none;
+  }
+}
+
+/* Nombre en dos líneas y botón de colapsar con el ícono centrado (D65). */
+.sidebar__nombre {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  font-size: 16px;
+}
+
+.sidebar__subnombre {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.sidebar__colapsar {
+  padding: 0;
+  line-height: 0;
+}
+
+.sidebar__colapsar svg {
+  display: block;
+}
+
+/* La marca es un botón (D66): toda la zona colapsa el menú. */
+button.sidebar__marca {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  flex: none;
+}
+
+button.sidebar__marca:hover {
+  background: var(--color-surface-muted);
+}
+
+button.sidebar__marca:hover .sidebar__colapsar {
+  color: var(--color-text);
+}
+
+button.sidebar__marca:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+@media (max-width: 1000px) {
+  button.sidebar__marca {
+    cursor: default;
+  }
+
+  button.sidebar__marca:hover {
+    background: none;
+  }
+}

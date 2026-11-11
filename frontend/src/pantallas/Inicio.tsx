@@ -3,6 +3,7 @@ import {
   MdOutlineAddShoppingCart,
   MdOutlineCheckCircle,
   MdOutlineChevronRight,
+  MdOutlineFactCheck,
   MdOutlineInsights,
   MdOutlinePayments,
   MdOutlineWarningAmber,
@@ -11,10 +12,10 @@ import {
 import { api, type Venta } from "../api";
 import { BarChart, type Barra } from "../components/charts/BarChart";
 import { PuntoEquilibrioCard } from "../components/dashboard/PuntoEquilibrioCard";
-import { TopClientesCard } from "../components/dashboard/TopClientesCard";
 import { GASTOS_FIJOS_MENSUALES, puntoDeEquilibrio } from "../components/dashboard/indicadores";
-import { bs, cantidad, diaLargo, hoyISO, hora, inicioDeMesISO, medida, porcentaje } from "../formato";
+import { bs, cantidad, diaLargo, hoyISO, hora, inicioDeMesISO, medida } from "../formato";
 import { Aviso, Button, Cargando, Panel, useDatos } from "../ui";
+import { prepararAjuste, prepararCompra, prepararDia } from "../compraPendiente";
 import { tomarUltimaVenta } from "../ultimaVenta";
 import "./Inicio.css";
 
@@ -23,6 +24,14 @@ const DIAS = ["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sá"];
 
 const isoLocal = (fecha: Date): string => fecha.toLocaleDateString("sv-SE");
 
+// Los últimos 7 días (hoy incluido), del más viejo a hoy.
+const ultimosSieteDias = (): Date[] =>
+  Array.from({ length: 7 }, (_, i) => {
+    const fecha = new Date();
+    fecha.setDate(fecha.getDate() - (6 - i));
+    return fecha;
+  });
+
 // Últimos 7 días (hoy incluido) con las unidades vendidas en cada uno.
 function tendenciaSemanal(ventas: Venta[]): Barra[] {
   const porDia = new Map<string, number>();
@@ -30,15 +39,11 @@ function tendenciaSemanal(ventas: Venta[]): Barra[] {
     const dia = isoLocal(new Date(v.fecha));
     porDia.set(dia, (porDia.get(dia) ?? 0) + Number(v.cantidad));
   }
-  return Array.from({ length: 7 }, (_, i) => {
-    const fecha = new Date();
-    fecha.setDate(fecha.getDate() - (6 - i));
-    return {
-      etiqueta: DIAS[fecha.getDay()] ?? "",
-      valor: porDia.get(isoLocal(fecha)) ?? 0,
-      destacada: i === 6,
-    };
-  });
+  return ultimosSieteDias().map((fecha, i) => ({
+    etiqueta: DIAS[fecha.getDay()] ?? "",
+    valor: porDia.get(isoLocal(fecha)) ?? 0,
+    destacada: i === 6,
+  }));
 }
 
 export function Inicio() {
@@ -53,23 +58,19 @@ export function Inicio() {
 
   const semana = useDatos(() => api.ventas(haceSeis, hoy), [haceSeis, hoy]);
   const alertas = useDatos(api.alertas);
-  const pendientes = useDatos(api.pendientes);
   const productos = useDatos(() => api.productos({ tipo: "VENTA", activo: true }));
   const insumos = useDatos(api.insumos);
   const inicioMes = inicioDeMesISO();
   const ventasMes = useDatos(() => api.ventas(inicioMes, hoy), [inicioMes, hoy]);
   const gastosMes = useDatos(() => api.gastos(inicioMes, hoy), [inicioMes, hoy]);
-  const clientesMes = useDatos(() => api.reporteClientes(inicioMes, hoy), [inicioMes, hoy]);
 
   const recargarTodo = () => {
     void semana.recargar();
     void alertas.recargar();
-    void pendientes.recargar();
     void productos.recargar();
     void insumos.recargar();
     void ventasMes.recargar();
     void gastosMes.recargar();
-    void clientesMes.recargar();
   };
 
   // Las anuladas no cuentan en ningún total ni en la tendencia.
@@ -83,10 +84,13 @@ export function Inicio() {
 
   // Utilidad neta = ganancia bruta − gastos operativos del período (pantalla Gastos).
   const gastosDia =
-    gastosMes.datos?.gastos.filter((g) => isoLocal(new Date(g.fecha)) === hoy).reduce((t, g) => t + Number(g.monto), 0) ?? 0;
+    gastosMes.datos?.gastos
+      // La compra de insumos ya se descuenta como costo de producción al vender (D51).
+      .filter((g) => g.categoria !== "INSUMOS" && isoLocal(new Date(g.fecha)) === hoy)
+      .reduce((t, g) => t + Number(g.monto), 0) ?? 0;
   const netaDia = gananciaDia - gastosDia;
   const gananciaMes = Number(ventasMes.datos?.resumen.gananciaBruta ?? 0);
-  const gastosDelMes = Number(gastosMes.datos?.total ?? 0);
+  const gastosDelMes = Number(gastosMes.datos?.totalOperativo ?? 0);
   const netaMes = gananciaMes - gastosDelMes;
   const tono = (valor: number) => (valor < 0 ? "negativo" : valor > 0 ? "positivo" : undefined);
 
@@ -103,23 +107,36 @@ export function Inicio() {
   const enPerdida = productos.datos?.filter((p) => p.gananciaUnitaria !== null && Number(p.gananciaUnitaria) < 0) ?? [];
 
   return (
-    <>
+    // .inicio achica todo el Resumen un poco (cajas, textos y números), sin tocar las otras pantallas.
+    <div className="inicio">
       <div className="cabecera-pantalla">
         <div>
           <h1>Resumen del día</h1>
           <p>Lo importante de hoy, de un vistazo.</p>
         </div>
-        <Button onClick={recargarTodo}>
-          <MdRefresh aria-hidden />
-          Actualizar
-        </Button>
+        {/* El acceso a la Caja vive en la cabecera: siempre en el mismo lugar y sin ocupar una tarjeta. */}
+        <div className="inicio__acciones">
+          <Button onClick={recargarTodo}>
+            <MdRefresh aria-hidden />
+            Actualizar
+          </Button>
+          <Button
+            variante="exito"
+            onClick={() => {
+              window.location.hash = "caja";
+            }}
+          >
+            <MdOutlineAddShoppingCart aria-hidden />
+            Registrar pedido
+          </Button>
+        </div>
       </div>
 
       {ultima && (
         <Aviso tipo="ok">
-          {ultima.estadoPago === "PENDIENTE" ? "Fiado registrado" : "Pedido registrado"}:{" "}
-          {ultima.ventas.map((v) => `${cantidad(v.cantidad)} × ${v.producto}`).join(", ")} = {bs(ultima.totalVenta)} a{" "}
-          {ultima.cliente} (costo de producción {bs(ultima.costoTotal)}, ganancia {bs(ultima.gananciaBruta)}).
+          Pedido registrado: {ultima.ventas.map((v) => `${cantidad(v.cantidad)} × ${v.producto}`).join(", ")} ={" "}
+          {bs(ultima.totalVenta)} a {ultima.cliente} (costo de producción {bs(ultima.costoTotal)}, ganancia{" "}
+          {bs(ultima.gananciaBruta)}).
           {isoLocal(new Date(ultima.fecha)) !== hoy && (
             <> Quedó como venta del {diaLargo(isoLocal(new Date(ultima.fecha)))}, así que no suma en «Caja de hoy».</>
           )}
@@ -166,19 +183,6 @@ export function Inicio() {
               <dt>Utilidad neta</dt>
               <dd className={tono(netaDia)}>{bs(netaDia)}</dd>
             </div>
-            <div>
-              <dt>
-                <a href="#caja" className="inicio-card__enlace-dato">
-                  Por cobrar (fiado)
-                </a>
-              </dt>
-              <dd className={Number(pendientes.datos?.total ?? 0) > 0 ? "inicio-card__por-cobrar" : undefined}>
-                {bs(pendientes.datos?.total ?? 0)}
-                {pendientes.datos && pendientes.datos.ventas.length > 0 && (
-                  <span className="inicio-card__cuenta"> · {pendientes.datos.ventas.length}</span>
-                )}
-              </dd>
-            </div>
           </dl>
           <div className="inicio-card__mes">
             <span>Utilidad neta del mes</span>
@@ -187,24 +191,6 @@ export function Inicio() {
               Ganancia {bs(gananciaMes)} − gastos {bs(gastosDelMes)}
             </span>
           </div>
-        </section>
-
-        <section className="inicio-card inicio-card--accion">
-          <header className="inicio-card__cabecera">
-            <span className="inicio-card__titulo">Acción rápida</span>
-          </header>
-          <p className="secundario">Arma un pedido con varios productos: elige la familia, toca los sabores y ajusta las cantidades.</p>
-          <Button
-            variante="exito"
-            tamano="grande"
-            className="inicio-card__boton-venta"
-            onClick={() => {
-              window.location.hash = "caja";
-            }}
-          >
-            <MdOutlineAddShoppingCart aria-hidden />
-            Registrar pedido
-          </Button>
         </section>
 
         <section className="inicio-card">
@@ -225,11 +211,36 @@ export function Inicio() {
               <ul className="inicio-alertas">
                 {alertas.datos?.slice(0, MAX_ALERTAS).map((a) => (
                   <li key={a.insumoId}>
-                    <span className={`semaforo ${a.nivel === "SIN_STOCK" ? "" : "semaforo-amarillo"}`} aria-hidden />
-                    <span className="inicio-alertas__nombre">{a.nombre}</span>
-                    <span className="inicio-alertas__stock">
-                      {stockDe(a.insumoId, a.stockActual)}
-                    </span>
+                    <div className="inicio-alertas__dato">
+                      <span className={`semaforo ${a.nivel === "SIN_STOCK" ? "" : "semaforo-amarillo"}`} aria-hidden />
+                      <span className="inicio-alertas__nombre">{a.nombre}</span>
+                      <span className="inicio-alertas__stock">{stockDe(a.insumoId, a.stockActual)}</span>
+                    </div>
+                    {/* Igual que en Insumos (D72): la compra va a Gastos; «Actualizar stock» corrige lo que hay. */}
+                    <div className="inicio-alertas__acciones">
+                      <button
+                        type="button"
+                        className="boton boton-chico"
+                        title="Abre Gastos con este insumo: suma al stock y queda el gasto"
+                        onClick={() => {
+                          prepararCompra(a.insumoId);
+                          window.location.hash = "gastos";
+                        }}
+                      >
+                        <MdOutlineAddShoppingCart aria-hidden /> Registrar compra
+                      </button>
+                      <button
+                        type="button"
+                        className="boton boton-chico"
+                        title="Escribe cuánto hay ahora (regalo, pérdida o conteo)"
+                        onClick={() => {
+                          prepararAjuste(a.insumoId);
+                          window.location.hash = "insumos";
+                        }}
+                      >
+                        <MdOutlineFactCheck aria-hidden /> Actualizar stock
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -247,14 +258,20 @@ export function Inicio() {
               <MdOutlineInsights />
             </span>
           </header>
-          <BarChart datos={barras} alto={120} descripcion={`Unidades vendidas por día: ${barras.map((b) => `${b.etiqueta} ${b.valor}`).join(", ")}`} />
+          {/* Tocar un día abre Desempeño con ese día en «Por producto» (D72). */}
+          <BarChart
+            datos={barras}
+            alto={120}
+            descripcion={`Unidades vendidas por día: ${barras.map((b) => `${b.etiqueta} ${b.valor}`).join(", ")}`}
+            alElegir={(i) => {
+              const fecha = ultimosSieteDias()[i];
+              if (!fecha) return;
+              prepararDia(isoLocal(fecha));
+              window.location.hash = "desempeno";
+            }}
+          />
           <div className="inicio-card__pie">{cantidad(unidadesSemana)} unidades vendidas en la semana</div>
         </section>
-      </div>
-
-      <div className="inicio__indicadores">
-        <PuntoEquilibrioCard equilibrio={equilibrio} mes={nombreMes} />
-        <TopClientesCard reporte={clientesMes.datos ?? []} mes={nombreMes} />
       </div>
 
       {enPerdida.length > 0 && (
@@ -265,43 +282,9 @@ export function Inicio() {
         </Aviso>
       )}
 
-      <div className="dos-columnas">
-        <Panel titulo="Rentabilidad por producto">
-          {productos.cargando && !productos.datos ? (
-            <Cargando />
-          ) : (
-            <div className="tabla-envoltura">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Producto</th>
-                    <th className="num">Costo</th>
-                    <th className="num">Precio</th>
-                    <th className="num">Margen</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {productos.datos?.map((p) => {
-                    const pierde = p.gananciaUnitaria !== null && Number(p.gananciaUnitaria) < 0;
-                    return (
-                      <tr key={p.id}>
-                        <td>{p.nombre}</td>
-                        <td className="num">{bs(p.costoUnitario)}</td>
-                        <td className="num">{bs(p.precioVenta)}</td>
-                        <td className="num">
-                          <span className={`etiqueta ${pierde ? "etiqueta-negativa" : "etiqueta-positiva"}`}>
-                            {porcentaje(p.margenPorcentaje)}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
-
+      {/* Punto de equilibrio y Ventas de hoy, uno al lado del otro (D77). */}
+      <div className="inicio__indicadores">
+        <PuntoEquilibrioCard equilibrio={equilibrio} mes={nombreMes} />
         <Panel titulo="Ventas de hoy">
           {semana.cargando && !semana.datos ? (
             <Cargando />
@@ -326,9 +309,7 @@ export function Inicio() {
                         {cantidad(v.cantidad)} × {v.producto}
                       </td>
                       <td className="num">{bs(v.totalVenta)}</td>
-                      <td className={`num ${Number(v.gananciaBruta) < 0 ? "negativo" : "positivo"}`}>
-                        {bs(v.gananciaBruta)}
-                      </td>
+                      <td className={`num ${Number(v.gananciaBruta) < 0 ? "negativo" : "positivo"}`}>{bs(v.gananciaBruta)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -337,6 +318,6 @@ export function Inicio() {
           )}
         </Panel>
       </div>
-    </>
+    </div>
   );
 }

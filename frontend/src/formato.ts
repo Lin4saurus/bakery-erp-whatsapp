@@ -38,6 +38,7 @@ export const nombreCategoria: Record<CategoriaInsumo, string> = {
 };
 
 export const nombreCategoriaGasto: Record<CategoriaGasto, string> = {
+  INSUMOS: "Compra de insumos",
   LIMPIEZA: "Limpieza",
   EQUIPAMIENTO: "Equipamiento",
   USO_PERSONAL: "Uso personal",
@@ -71,3 +72,15 @@ export const esNumeroValido = (texto: string): boolean => {
   const normal = normalizarNumero(texto);
   return normal !== "" && Number.isFinite(Number(normal));
 };
+
+// «Queque Oreo» dentro de «Queques» se muestra «Oreo»: el ojo lee la palabra que cambia.
+export function nombreCorto(nombre: string, familia: string): string {
+  const texto = nombre.trim();
+  for (const prefijo of [familia, familia.replace(/es$/i, ""), familia.replace(/s$/i, "")]) {
+    if (prefijo && texto.toLowerCase().startsWith(`${prefijo.toLowerCase()} `)) {
+      const resto = texto.slice(prefijo.length + 1).trim();
+      return resto.charAt(0).toUpperCase() + resto.slice(1);
+    }
+  }
+  return texto;
+}

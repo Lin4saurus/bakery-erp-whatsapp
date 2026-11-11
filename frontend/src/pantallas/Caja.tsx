@@ -1,10 +1,9 @@
 import { useState, type KeyboardEvent } from "react";
-import { api, mensajeDeError, type Cliente, type Producto, type Venta } from "../api";
-import { bs, cantidad, diaLargo, esNumeroValido, fechaCorta, hoyISO, normalizarNumero } from "../formato";
+import { api, mensajeDeError, type Cliente, type Producto, type TipoCliente } from "../api";
+import { bs, cantidad, diaLargo, esNumeroValido, hoyISO, nombreCorto, normalizarNumero } from "../formato";
 import { Aviso, BuscadorCliente, Button, Campo, Cargando, Panel, TipoClienteBadge, mismoNombre, useDatos } from "../ui";
 import { precioParaCliente } from "../precios";
 import { guardarUltimaVenta } from "../ultimaVenta";
-import { VentasDeHoy } from "./VentasDeHoy";
 import "./Caja.css";
 
 // Caja por pedido (D48): primero la familia (Queques, Flanes…), después los sabores de esa familia
@@ -18,39 +17,25 @@ interface Linea {
   precio: string;
 }
 
-// «Queque Oreo» dentro de «Queques» se muestra «Oreo»: el ojo lee la palabra que cambia.
-export function nombreCorto(nombre: string, familia: string): string {
-  const texto = nombre.trim();
-  for (const prefijo of [familia, familia.replace(/es$/i, ""), familia.replace(/s$/i, "")]) {
-    if (prefijo && texto.toLowerCase().startsWith(`${prefijo.toLowerCase()} `)) {
-      const resto = texto.slice(prefijo.length + 1).trim();
-      return resto.charAt(0).toUpperCase() + resto.slice(1);
-    }
-  }
-  return texto;
-}
-
 const soloDigitos = (texto: string) => texto.replace(/\D/g, "").slice(0, 4);
 
 export function Caja() {
   const hoy = hoyISO();
   const productos = useDatos(() => api.productos({ tipo: "VENTA", activo: true }));
-  const ventasHoy = useDatos(() => api.ventas(hoy, hoy), [hoy]);
-  const pendientes = useDatos(api.pendientes);
   const clientes = useDatos(() => api.clientes());
 
   const [familiaElegida, setFamiliaElegida] = useState<string | null>(null);
   const [lineas, setLineas] = useState<Linea[]>([]);
-  const [fiado, setFiado] = useState(false);
   // Todo pedido lleva cliente: nombre (con sugerencias de los ya registrados) y celular (D44).
   const [nombreCliente, setNombreCliente] = useState("");
   const [celular, setCelular] = useState("");
   const [clienteId, setClienteId] = useState("");
+  // Tipo con que se guarda un cliente nuevo (D53): minorista salvo que se elija mayorista.
+  const [tipoNuevo, setTipoNuevo] = useState<TipoCliente>("MINORISTA");
   const [fechaVenta, setFechaVenta] = useState(hoy);
   const esOtroDia = fechaVenta !== hoy;
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cobrando, setCobrando] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [errorCatalogo, setErrorCatalogo] = useState<string | null>(null);
 
@@ -175,9 +160,9 @@ export function Caja() {
           cantidad: String(f.n),
           precioUnitario: f.acordado ? undefined : normalizarNumero(f.precio),
         })),
-        fiado,
         clienteId: clienteSel?.id,
         clienteNombre: clienteSel ? undefined : nombreCliente.trim(),
+        clienteTipo: clienteSel ? undefined : tipoNuevo,
         celular: celular.trim(),
         fecha: esOtroDia ? fechaVenta : undefined,
       });
@@ -189,46 +174,6 @@ export function Caja() {
     } finally {
       setGuardando(false);
     }
-  };
-
-  // ---------- fiados ----------
-  // Un pedido fiado de varios productos se cobra entero, en una sola fila.
-  const grupos = (() => {
-    const mapa = new Map<string, Venta[]>();
-    for (const v of pendientes.datos?.ventas ?? []) {
-      const clave = v.pedidoId ?? `venta-${v.id}`;
-      mapa.set(clave, [...(mapa.get(clave) ?? []), v]);
-    }
-    return [...mapa.entries()].map(([clave, ventas]) => ({
-      clave,
-      ventas,
-      total: ventas.reduce((t, v) => t + Number(v.totalVenta), 0),
-    }));
-  })();
-
-  const cobrar = async (clave: string, ventas: Venta[]) => {
-    const primera = ventas[0];
-    if (!primera) return;
-    setCobrando(clave);
-    setMensaje(null);
-    setError(null);
-    try {
-      if (primera.pedidoId) await api.cobrarPedido(primera.pedidoId);
-      else await api.cobrar(primera.id);
-      setMensaje(`Cobrado: ${bs(ventas.reduce((t, v) => t + Number(v.totalVenta), 0))} de ${primera.cliente ?? "cliente"}.`);
-      void pendientes.recargar();
-      void ventasHoy.recargar();
-    } catch (e) {
-      setErrorCatalogo(mensajeDeError(e));
-    } finally {
-      setCobrando(null);
-    }
-  };
-
-  const alAnular = (texto: string) => {
-    setMensaje(texto);
-    void ventasHoy.recargar();
-    void pendientes.recargar();
   };
 
   const teclaFila = (e: KeyboardEvent, p: Producto) => {
@@ -358,45 +303,7 @@ export function Caja() {
             </>
           )}
 
-          <div id="por-cobrar" className="caja__por-cobrar">
-            <Panel titulo={`Por cobrar (fiado) · ${bs(pendientes.datos?.total ?? 0)}`}>
-              {pendientes.error && <Aviso tipo="error">{pendientes.error}</Aviso>}
-              {pendientes.cargando && !pendientes.datos ? (
-                <Cargando />
-              ) : grupos.length === 0 ? (
-                <p className="vacio">No hay fiados pendientes.</p>
-              ) : (
-                <div className="tabla-envoltura">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Fecha</th>
-                        <th>Cliente</th>
-                        <th>Detalle</th>
-                        <th className="num">Monto</th>
-                        <th />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {grupos.map(({ clave, ventas, total: monto }) => (
-                        <tr key={clave}>
-                          <td className="hora secundario">{fechaCorta(ventas[0]?.fecha ?? "")}</td>
-                          <td>{ventas[0]?.cliente}</td>
-                          <td>{ventas.map((v) => `${cantidad(v.cantidad)} × ${v.producto}`).join(", ")}</td>
-                          <td className="num">{bs(monto)}</td>
-                          <td className="num">
-                            <Button tamano="chico" disabled={cobrando === clave} onClick={() => void cobrar(clave, ventas)}>
-                              {cobrando === clave ? "Cobrando…" : "Cobrar"}
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Panel>
-          </div>
+          {/* Sin «Ventas de hoy» ni «Por cobrar» (D73): se ven en el Inicio y en Historial de ventas. */}
         </div>
 
         <div>
@@ -431,9 +338,25 @@ export function Caja() {
                     : "Sin precio acordado: precio de venta."}
                 </p>
               ) : clienteNuevo ? (
-                <p className="secundario caja__cliente-detalle">
-                  <span className="etiqueta etiqueta-positiva">Cliente nuevo</span> Se guardará en Clientes con su celular.
-                </p>
+                <>
+                  <p className="secundario caja__cliente-detalle">
+                    <span className="etiqueta etiqueta-positiva">Cliente nuevo</span> Se guardará en Clientes con su celular, como:
+                  </p>
+                  <div className="caja__tipo-nuevo" role="radiogroup" aria-label="Tipo del cliente nuevo">
+                    {(["MINORISTA", "MAYORISTA"] as const).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        role="radio"
+                        aria-checked={tipoNuevo === t}
+                        className={`caja__tipo-opcion ${tipoNuevo === t ? "caja__tipo-opcion--elegida" : ""}`}
+                        onClick={() => setTipoNuevo(t)}
+                      >
+                        {t === "MINORISTA" ? "Minorista" : "Mayorista"}
+                      </button>
+                    ))}
+                  </div>
+                </>
               ) : (
                 <p className="secundario caja__cliente-detalle">Sin nombre y celular no se puede registrar el pedido.</p>
               )}
@@ -502,23 +425,17 @@ export function Caja() {
                   </Campo>
                   {esOtroDia && fechaValida && (
                     <Aviso tipo="alerta">
-                      Se cargará como pedido del <strong>{diaLargo(fechaVenta)}</strong>. No aparecerá en «Ventas de hoy».
+                      Se cargará como pedido del <strong>{diaLargo(fechaVenta)}</strong>. No sumará en la «Caja de hoy» del Inicio.
                     </Aviso>
                   )}
                   {!fechaValida && <Aviso tipo="error">Elige una fecha de hoy o anterior.</Aviso>}
+                  {/* Sin fiados (D74): todo pedido se cobra al momento. */}
                   <div className="caja__separador" />
-                  <label className="casilla">
-                    <input type="checkbox" checked={fiado} onChange={(e) => setFiado(e.target.checked)} />
-                    <span>
-                      <strong>Fiado</strong>
-                      <span className="secundario"> · se entrega ahora y se cobra después</span>
-                    </span>
-                  </label>
 
                   <div className="resumen-venta">
                     <span className="secundario">Unidades</span>
                     <span>{cantidad(unidades)}</span>
-                    <span>{fiado ? "Total por cobrar" : "Total a cobrar"}</span>
+                    <span>Total a cobrar</span>
                     <span className="total">{bs(total)}</span>
                   </div>
                   {ganancia < 0 && <Aviso tipo="alerta">Con estos precios se vende por debajo del costo.</Aviso>}
@@ -529,7 +446,7 @@ export function Caja() {
                   >
                     {guardando
                       ? "Registrando…"
-                      : `${fiado ? "Registrar fiado" : "Registrar pedido"}${esOtroDia ? " de otro día" : ""} · ${bs(total)}`}
+                      : `Registrar pedido${esOtroDia ? " de otro día" : ""} · ${bs(total)}`}
                   </button>
                   <div className="caja__quitar">
                     <Button variante="texto" tamano="chico" onClick={() => setLineas([])}>
@@ -541,7 +458,6 @@ export function Caja() {
             </div>
           </Panel>
 
-          <VentasDeHoy lista={ventasHoy.datos} alAnular={alAnular} />
         </div>
       </div>
     </>

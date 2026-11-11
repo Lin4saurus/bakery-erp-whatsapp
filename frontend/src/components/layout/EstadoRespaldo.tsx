@@ -15,7 +15,7 @@ const hace = (fechaISO: string): string => {
 };
 
 // Pie del menú: cuándo fue el último respaldo y un botón para hacer uno al momento.
-export function EstadoRespaldo() {
+export function EstadoRespaldo({ compacto = false }: { compacto?: boolean }) {
   const lista = useDatos(api.respaldos);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +36,23 @@ export function EstadoRespaldo() {
   const ultimo = lista.datos?.respaldos[0];
   const viejo = !ultimo || Date.now() - new Date(ultimo.fecha).getTime() > 2 * 24 * 3_600_000;
 
+  const cuando = lista.cargando && !lista.datos ? "…" : ultimo ? hace(ultimo.fecha) : "nunca";
+
+  // Menú de solo íconos (D62): un botón con el ícono; el detalle va en el texto al pasar el mouse.
+  if (compacto) {
+    return (
+      <button
+        className={`estado-respaldo__compacto ${viejo ? "estado-respaldo__viejo" : ""}`}
+        disabled={guardando}
+        onClick={() => void respaldar()}
+        title={`Último respaldo: ${cuando}. Tocar para respaldar ahora.${error ? ` ${error}` : ""}`}
+        aria-label={`Respaldar ahora. Último respaldo: ${cuando}`}
+      >
+        <MdOutlineBackup aria-hidden />
+      </button>
+    );
+  }
+
   return (
     <div className="estado-respaldo" title={lista.datos ? `Carpeta: ${lista.datos.carpeta}` : undefined}>
       <div className="estado-respaldo__linea">
@@ -43,7 +60,7 @@ export function EstadoRespaldo() {
         <span>
           Último respaldo:{" "}
           <span className={viejo ? "estado-respaldo__viejo" : undefined}>
-            {lista.cargando && !lista.datos ? "…" : ultimo ? hace(ultimo.fecha) : "nunca"}
+            {cuando}
           </span>
         </span>
       </div>

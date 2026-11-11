@@ -1,5 +1,6 @@
-import { Fragment, useState } from "react";
-import { MdOutlineEdit, MdOutlineFactCheck } from "react-icons/md";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { MdOutlineAddShoppingCart, MdOutlineEdit, MdOutlineFactCheck } from "react-icons/md";
+import { prepararCompra, tomarAjuste } from "../compraPendiente";
 import {
   api,
   mensajeDeError,
@@ -41,9 +42,20 @@ const insumoVacio: DatosInsumo = {
 export function Insumos() {
   const insumos = useDatos(api.insumos);
   const [busqueda, setBusqueda] = useState("");
-  const [abierto, setAbierto] = useState<{ id: number; modo: Modo } | null>(null);
+  // Desde las alertas del Inicio llega un insumo para actualizar su stock (D72).
+  const [abierto, setAbierto] = useState<{ id: number; modo: Modo } | null>(() => {
+    const id = tomarAjuste();
+    return id === null ? null : { id, modo: "stock" };
+  });
   const [creando, setCreando] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
+  // Si llegó desde el Inicio, una vez cargada la lista se lleva el formulario a la vista.
+  const llegoDelInicio = useRef(abierto !== null);
+  useEffect(() => {
+    if (!llegoDelInicio.current || !insumos.datos) return;
+    llegoDelInicio.current = false;
+    document.querySelector(".insumos__formulario-abierto")?.scrollIntoView({ block: "center" });
+  }, [insumos.datos]);
 
   const terminar = (texto: string) => {
     setAbierto(null);
@@ -148,7 +160,8 @@ export function Insumos() {
                         )}
                         <td>
                           <div className="fila-botones insumo__acciones">
-                            {/* «Actualizar stock» sirve para sumar (compras) y para restar (mermas). */}
+                            {/* Las compras se cargan en Gastos (suman al stock y quedan como gasto, D51);
+                                «Actualizar stock» corrige lo contado (mermas, diferencias). */}
                             <button
                               className="boton boton-chico"
                               title="Nombre, envase, precio y stock mínimo"
@@ -156,10 +169,22 @@ export function Insumos() {
                             >
                               <MdOutlineEdit aria-hidden /> Editar datos
                             </button>
+                            {insumo.activo && insumo.controlaStock && (
+                              <button
+                                className="boton boton-chico"
+                                title="Abre Gastos con este insumo: suma al stock y queda el gasto"
+                                onClick={() => {
+                                  prepararCompra(insumo.id);
+                                  window.location.hash = "gastos";
+                                }}
+                              >
+                                <MdOutlineAddShoppingCart aria-hidden /> Registrar compra
+                              </button>
+                            )}
                             {insumo.controlaStock && (
                               <button
                                 className="boton boton-chico"
-                                title="Escribe cuánto hay ahora: después de comprar, o si algo se perdió"
+                                title="Escribe cuánto hay ahora si el conteo no coincide o algo se perdió"
                                 onClick={() => abrir(insumo.id, "stock")}
                               >
                                 <MdOutlineFactCheck aria-hidden /> Actualizar stock
@@ -169,7 +194,7 @@ export function Insumos() {
                         </td>
                       </tr>
                       {estaAbierto && abierto && (
-                        <tr className="fila-formulario">
+                        <tr className="fila-formulario insumos__formulario-abierto">
                           <td colSpan={6}>
                             {abierto.modo === "editar" ? (
                               <FormularioInsumo
@@ -265,7 +290,16 @@ function FormularioInsumo({
           <Campo etiqueta="Nombre">
             <input value={datos.nombre} onChange={(e) => cambiar("nombre", e.target.value)} autoFocus />
           </Campo>
-          <Campo etiqueta="Categoría">
+          <Campo
+            etiqueta="Categoría"
+            ayuda={
+              datos.categoria === "EMPAQUE"
+                ? "Caja, etiqueta, envase: va uno por paquete vendido, sin importar cuántas unidades lleve."
+                : datos.categoria === "GASTO_INDIRECTO"
+                  ? "Es un gasto (se carga en Gastos); no va en las recetas ni sube el costo."
+                  : "Se usa en las recetas según la cantidad que rinde."
+            }
+          >
             <select value={datos.categoria} onChange={(e) => cambiar("categoria", e.target.value as CategoriaInsumo)}>
               {Object.entries(nombreCategoria).map(([valor, texto]) => (
                 <option key={valor} value={valor}>
@@ -410,7 +444,11 @@ function FormularioStock({
         <Campo
           etiqueta={`Stock que hay ahora (en ${u})`}
           equivalencia={valido ? medida(stockReal, insumo.unidadBase) : null}
-          ayuda={valido ? "Después de comprar, súmale lo que llegó. Si algo se perdió, réstalo." : "Escribe cuánto hay (0 o más)."}
+          ayuda={
+            valido
+              ? "Para corregir lo contado o una merma. Las compras cárgalas con «Registrar compra»: así quedan en Gastos."
+              : "Escribe cuánto hay (0 o más)."
+          }
         >
           <input inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} autoFocus />
         </Campo>

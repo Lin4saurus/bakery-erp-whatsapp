@@ -54,3 +54,26 @@
   color: var(--color-text);
   font-weight: 600;
 }
+
+/* Columnas tocables (D69): toda la columna elige el día o el mes. */
+.bar-chart__columna--tocable {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px 4px 0 0;
+}
+
+.bar-chart__columna--tocable:hover {
+  background: var(--color-surface-muted);
+}
+
+.bar-chart__columna--tocable:hover .bar-chart__barra {
+  opacity: 0.85;
+}
+
+.bar-chart__columna--tocable:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}

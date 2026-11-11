@@ -1,6 +1,17 @@
+/* Todo el Inicio un 10 % más chico: cajas, textos, números, íconos y gráfico juntos. */
+.inicio {
+  zoom: 0.9;
+}
+
+.inicio__acciones {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
 .inicio__tarjetas {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
   margin-bottom: var(--space-2);
 }
@@ -101,30 +112,6 @@
   text-decoration-color: currentColor;
 }
 
-.inicio-card__por-cobrar {
-  color: var(--color-warning);
-}
-
-.inicio-card__cuenta {
-  font-weight: 400;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-
-.inicio-card--accion .secundario {
-  margin-bottom: var(--space-2);
-}
-
-.inicio-card__boton-venta {
-  margin-top: auto;
-  min-height: 52px;
-}
-
-.inicio-card__boton-venta svg {
-  width: 22px;
-  height: 22px;
-}
-
 .inicio-alertas {
   list-style: none;
   margin: 0;
@@ -185,7 +172,7 @@
   color: var(--color-text-secondary);
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1000px) {
   .inicio__tarjetas {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -242,3 +229,37 @@
   }
 }
 
+/* Punto de equilibrio y Ventas de hoy lado a lado (D77); en pantallas angostas, uno debajo del otro. */
+.inicio__indicadores {
+  align-items: stretch;
+}
+
+.inicio__indicadores > .panel {
+  margin: 0;
+}
+
+/* Alertas con sus dos botones debajo (D72). */
+.inicio-alertas li {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.inicio-alertas__dato {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.inicio-alertas__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 18px;
+}
+
+.inicio-alertas__acciones .boton {
+  font-size: 12px;
+  padding: 3px 8px;
+}

@@ -4,6 +4,7 @@ import { CategoriaInsumo, Prisma, TipoMovimiento, UnidadMedida, type Insumo } fr
 import { prisma } from "../prisma";
 import { AppError } from "../errors";
 import { costoUnitarioInsumo } from "../services/costeo";
+import { montoDeCompra, registrarCompra } from "../services/compras";
 import { alertaDe, registrarMovimiento, type AlertaStock } from "../services/inventario";
 import {
   alMenosUnCampo,
@@ -134,19 +135,28 @@ insumosRouter.post("/:id/movimientos", async (req, res) => {
       if (datos.precioEnvase !== undefined) {
         await tx.insumo.update({ where: { id }, data: { precioEnvase: datos.precioEnvase } });
       }
-      const cantidad = datos.cantidad ?? insumo.contenidoEnvase.mul(datos.envases ?? 0);
-      const nota = datos.nota ?? (datos.envases ? `${datos.envases.toString()} envase(s)` : undefined);
-      return registrarMovimiento(tx, { insumoId: id, tipo: TipoMovimiento.COMPRA, cantidad, nota });
+      // La compra también queda en Gastos («Compra de insumos»), al precio del envase: así las compras
+      // cargadas aquí o en Gastos quedan iguales (D51). Con precio 0 solo entra al stock.
+      const compra = await registrarCompra(tx, {
+        insumo,
+        envases: datos.envases,
+        cantidad: datos.cantidad,
+        monto: montoDeCompra(insumo, datos.precioEnvase ?? insumo.precioEnvase, datos.envases, datos.cantidad),
+        nota: datos.nota ?? (datos.envases ? `${datos.envases.toString()} envase(s)` : undefined),
+      });
+      if (!compra.movimiento) throw new AppError(500, "No se registró el movimiento de la compra.");
+      return { movimiento: compra.movimiento, insumo: compra.insumo, gasto: compra.gasto };
     }
     const cantidad = datos.stockReal !== undefined ? datos.stockReal.sub(insumo.stockActual) : (datos.cantidad ?? new Prisma.Decimal(0));
     if (cantidad.isZero()) throw new AppError(422, "El stock real es igual al actual: no hay nada que actualizar.");
-    return registrarMovimiento(tx, { insumoId: id, tipo: TipoMovimiento.AJUSTE, cantidad, nota: datos.nota });
+    return { ...(await registrarMovimiento(tx, { insumoId: id, tipo: TipoMovimiento.AJUSTE, cantidad, nota: datos.nota })), gasto: null };
   });
 
   res.status(201).json({
     movimiento: resultado.movimiento,
     insumo: conCosto(resultado.insumo),
     alerta: alertaDe(resultado.insumo),
+    gasto: resultado.gasto, // la compra que quedó en Gastos (null en un ajuste o con precio 0)
   });
 });
 

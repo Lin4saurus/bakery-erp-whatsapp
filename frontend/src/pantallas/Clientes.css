@@ -1,3 +1,4 @@
+/* Clientes con el mismo tamaño de letra que Insumos (D72): ya no lleva zoom 0.9. */
 .clientes__filtros {
   display: flex;
   flex-wrap: wrap;

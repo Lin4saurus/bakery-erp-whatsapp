@@ -40,7 +40,7 @@ tsconfig.json     strict + noUncheckedIndexedAccess
 
 10. **Ventas sin stock suficiente se registran igual** y la respuesta trae `alertas` (`SIN_STOCK` / `BAJO_MINIMO`). El stock puede quedar negativo, lo que muestra que falta cargar una compra. Bloquear la venta dejaría el sistema inusable mientras el inventario esté en 0.
 11. **Todo cambio de stock pasa por `registrarMovimiento`** (`services/inventario.ts`): actualiza `stockActual` con `increment` y deja un `MovimientoInventario` con el stock resultante. Las ventas lo llaman dentro de su transacción, junto con la creación de la venta: o se guarda todo o nada.
-12. `explotarInsumos` reparte el consumo de forma recursiva por sub-recetas (unidades / rendimiento × cantidad de cada insumo) y suma en un mapa los insumos repetidos.
+12. `explotarInsumos` reparte el consumo de forma recursiva por sub-recetas (unidades / rendimiento × cantidad de cada insumo) y suma en un mapa los insumos repetidos. En un producto de venta (D60) los ingredientes usan vendido × `unidadesPorVenta` / rendimiento y los insumos `EMPAQUE` se descuentan uno por cada cosa vendida; el costo es ingredientes ÷ rendimiento × `unidadesPorVenta` + empaques.
 13. **Frontend**: los cálculos de verdad los hace la API. El frontend solo convierte a `number` para mostrar y para la vista previa del costo mientras se edita una receta; al guardar, muestra lo que devuelve la API. Los números se aceptan con coma o punto («0,35») y se envían como texto con punto.
 14. **Un solo proceso en producción**: si existe `frontend/dist`, Express lo sirve junto a `/api`. En desarrollo se usan dos procesos (`npm run dev` + `npm run web`) y el proxy de Vite.
 
@@ -55,7 +55,9 @@ tsconfig.json     strict + noUncheckedIndexedAccess
 | DELETE | `/api/insumos/:id` | Borra si no está en ninguna receta |
 | GET | `/api/productos?tipo=&activo=` | Lista con costo, ganancia y margen |
 | GET | `/api/productos/:id` | Detalle con costo |
-| POST / PATCH / DELETE | `/api/productos[/:id]` | CRUD (`nombre`, `categoria`, `rendimientoReceta`, opcionales `tipo`, `unidadRendimiento`, `precioVenta`, `activo`) |
+| DELETE | `/api/productos/categorias/:categoria?tipo=` | (D64) borra todas las recetas de la categoría con la regla de D63; respaldo previo; 409 si un relleno se usa en otra categoría |
+| DELETE | `/api/productos/:id` | (D63) sin ventas borra; con ventas deja `eliminado` y responde `{ borrado, conservaVentas }`. |
+| POST / PATCH | `/api/productos[/:id]` | CRUD (`nombre`, `categoria`, `rendimientoReceta`, opcionales `tipo`, `unidadRendimiento`, `precioVenta`, `unidadesPorVenta`, `activo`) |
 | GET | `/api/productos/:id/costo` | Costo explotado: líneas de insumos y sub-recetas |
 | PUT | `/api/productos/:id/receta` | Reemplaza la receta: `{ ingredientes: [{insumoId, cantidad}], subRecetas?: [{subProductoId, cantidad}] }` |
 | PUT | `/api/productos/:id/receta/insumos/:insumoId` | Agrega o cambia un insumo: `{ cantidad }` |
@@ -70,19 +72,16 @@ tsconfig.json     strict + noUncheckedIndexedAccess
 | POST | `/api/ventas` | `{ productoId, cantidad, precioUnitario? }` → venta, consumo por insumo y alertas |
 | GET | `/api/ventas?desde=AAAA-MM-DD&hasta=AAAA-MM-DD` | Ventas y resumen (cantidad, unidades, total, costo, ganancia) |
 | GET | `/api/ventas/:id` | Venta con el consumo de insumos que generó |
-| GET | `/api/ventas/pendientes` | Fiados sin cobrar (de cualquier fecha) y el total por cobrar |
-| POST | `/api/ventas/:id/cobrar` | Marca un fiado como cobrado (409 si ya estaba cobrado o anulado) |
 | POST | `/api/ventas/:id/anular` | `{ motivo }`: devuelve el stock (movimientos ANULACION) y saca la venta de los totales (409 si ya estaba anulada) |
 
-**Anulación**: no se borra nada. La venta queda con `anulada = true`, fecha y motivo, y cada insumo recibe un movimiento ANULACION igual y opuesto a su salida. Así el historial del inventario cuadra y se puede auditar. Los totales (`resumen`, pendientes, dashboard) ignoran las anuladas.
+**Anulación**: no se borra nada. La venta queda con `anulada = true`, fecha y motivo, y cada insumo recibe un movimiento ANULACION igual y opuesto a su salida. Así el historial del inventario cuadra y se puede auditar. Los totales (`resumen`, dashboard) ignoran las anuladas.
 
-`POST /api/ventas` acepta además `fiado: true` y `cliente` (obligatorio si es fiado), y `fecha` (AAAA-MM-DD, hoy o anterior) para cargar una venta olvidada: se guarda al mediodía de ese día; los movimientos de stock llevan la fecha de carga y una nota con el día de la venta.
+`POST /api/ventas` acepta además `fecha` (AAAA-MM-DD, hoy o anterior) para cargar una venta olvidada: se guarda al mediodía de ese día; los movimientos de stock llevan la fecha de carga y una nota con el día de la venta.
 
 | GET | `/api/backups` | Carpeta de respaldos y lista (más nuevo primero) |
 |---|---|---|
 | POST | `/api/backups` | Crea un respaldo; devuelve también los antiguos que se borraron |
 
-**Fiado**: la venta, su ganancia y el descuento de inventario cuentan el día que se entrega el producto, no el día que se cobra. El cobro solo cambia `estadoPago` a `PAGADO` y guarda `fechaPago`. «Por cobrar» es la suma de los `totalVenta` pendientes.
 
 ## Ventas históricas (Fase 6, CONTEXT.md D24)
 - `hoja` y `fila` solo sirven para importar sin duplicar: `GET /api/historico` no los devuelve (D41).
@@ -102,7 +101,7 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 ## Clientes y precios acordados (Fase 8, D42)
 - Cada mayorista tiene su precio negociado por producto (`PrecioCliente`, único por cliente + producto). No hay listas de precios.
 - `services/precios.ts` (`precioAcordado`): si el cliente tiene precio acordado para el producto, la venta cobra ese y rechaza otro escrito a mano (422). Sin precio acordado se cobra el precio escrito (regateo) o el precio de venta. El frontend repite la regla en `frontend/src/precios.ts` solo para mostrar; la API manda.
-- `Venta.cliente` (texto) se conserva para los fiados sin ficha; con cliente registrado se copia su nombre. La relación con `Cliente` se llama `clienteRegistrado`.
+- `Venta.cliente` (texto) guarda el nombre; con cliente registrado se copia su nombre. La relación con `Cliente` se llama `clienteRegistrado`.
 
 | Método | Ruta | Qué hace |
 |---|---|---|
@@ -117,10 +116,11 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 ## Corregir y eliminar ventas (D43)
 | Método | Ruta | Qué hace |
 |---|---|---|
-| PATCH | `/api/ventas/:id` | Corrige `{ cantidad?, precioUnitario?, fecha?, sabores? }`; ajusta stock por la diferencia; 409 si está anulada |
+| PATCH | `/api/ventas/:id` | Corrige `{ cantidad?, precioUnitario?, fecha? }`; ajusta stock por la diferencia; 409 si está anulada |
 | DELETE | `/api/ventas/:id` | Devuelve el stock (si no estaba anulada) y borra la venta |
-| PATCH | `/api/historico/:id` | Corrige `{ fecha?, cantidad?, valor?, clienteId?, sabores? }`; marca `editada` |
+| PATCH | `/api/historico/:id` | Corrige `{ fecha?, cantidad?, valor? }` (el cliente no se cambia, D58); marca `editada` |
 | DELETE | `/api/historico/:id` | Marca `eliminada` (no se ve ni suma; reimportar no la revive) |
+| DELETE | `/api/historico/:id/pedido` | Marca `eliminada` todas las líneas (sabores) de la misma nota (D57) |
 
 ## Cliente obligatorio en la venta (D44)
 - `POST /api/ventas`: `clienteId` **o** `clienteNombre` (400 en `clienteNombre` si faltan ambos) + `celular` cuando el cliente no tiene. Respuesta con `clienteNuevo: true` si se creó.
@@ -182,9 +182,17 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 
 | Método | Ruta | Qué hace |
 |---|---|---|
-| POST | `/api/ventas/pedido` | `{ lineas: [{ productoId, cantidad, precioUnitario? }], fiado?, clienteId \| clienteNombre, celular?, fecha? }` → `{ pedidoId, cliente, clienteNuevo, estadoPago, fecha, ventas, unidades, totalVenta, costoTotal, gananciaBruta, alertas }` |
-| POST | `/api/ventas/pedidos/:pedidoId/cobrar` | Cobra todas las líneas fiadas del pedido (404 si no existe, 409 si no queda nada por cobrar) |
+| POST | `/api/ventas/pedido` | `{ lineas: [{ productoId, cantidad, precioUnitario? }], clienteId \| clienteNombre, celular?, fecha? }` → `{ pedidoId, cliente, clienteNuevo, fecha, ventas, unidades, totalVenta, costoTotal, gananciaBruta, alertas }` |
 
 - Cada línea es una `Venta` con `pedidoId` común; todo en una transacción. Producto repetido o lista vacía → 400; producto no disponible o precio distinto al acordado → 422 y no se guarda ninguna línea.
-- Las rutas por venta (`/:id/anular`, `PATCH /:id`, `DELETE /:id`, `/:id/cobrar`) siguen funcionando por línea.
-- Frontend: `Caja.tsx` (familias = `Producto.categoria`; `nombreCorto` quita el nombre de la familia), `api.crearPedido`, `api.cobrarPedido`; `ultimaVenta.ts` guarda el `PedidoCreado` para Inicio.
+- Las rutas por venta (`/:id/anular`, `PATCH /:id`, `DELETE /:id`) siguen funcionando por línea.
+- Frontend: `Caja.tsx` (familias = `Producto.categoria`; `nombreCorto` quita el nombre de la familia), `api.crearPedido`; `ultimaVenta.ts` guarda el `PedidoCreado` para Inicio.
+
+## Compra de insumos en Gastos (D51)
+
+- `POST /api/gastos` con `categoria: "INSUMOS"`: `{ insumoId, envases | cantidad, monto, descripcion?, actualizarPrecio? (true), fecha? }`. Crea el gasto y un `MovimientoInventario` COMPRA en una transacción; `GastoOperativo.movimientoId` los une.
+- `DELETE /api/gastos/:id` de una compra: movimiento AJUSTE negativo por lo que había sumado.
+- `GET /api/gastos`: `{ total, totalOperativo, porCategoria, gastos }` (gastos con `insumo: { nombre, unidadBase }`). La utilidad neta usa `totalOperativo`.
+
+
+**Sin fiados (D74)**: toda venta se cobra al momento. No hay `estadoPago`, `fechaPago`, `/ventas/pendientes` ni rutas de cobro; un `fiado` enviado se ignora.

@@ -1,8 +1,10 @@
 // Motor de costeo: "explota" la receta de un producto (insumos + sub-recetas)
 // y calcula su costo en tiempo real con los precios actuales de los insumos.
 // Reglas: CONTEXT.md §5.
+// Producto de venta (D60): costo de lo que se vende = ingredientes ÷ rendimiento × unidadesPorVenta + empaques.
+// Los empaques (caja, etiqueta, envase, film) van una vez por lo vendido: no se dividen por el rendimiento.
 
-import { Prisma, type TipoProducto, type UnidadMedida } from "@prisma/client";
+import { CategoriaInsumo, Prisma, TipoProducto, type UnidadMedida } from "@prisma/client";
 import type { Db } from "../prisma";
 import { AppError } from "../errors";
 
@@ -15,9 +17,10 @@ export interface LineaInsumo {
   insumoId: number;
   nombre: string;
   unidadBase: UnidadMedida;
-  cantidad: Decimal; // por tanda
+  cantidad: Decimal; // por tanda; los empaques de un producto de venta, por lo que se vende
   costoUnitario: Decimal; // Bs por unidad base
-  costo: Decimal; // Bs en la tanda
+  costo: Decimal; // Bs en la tanda (o por lo vendido, si es empaque)
+  esEmpaque: boolean; // solo en productos de venta (D60)
 }
 
 export interface LineaSubReceta {
@@ -35,10 +38,14 @@ export interface CostoProducto {
   tipo: TipoProducto;
   rendimientoReceta: Decimal;
   unidadRendimiento: UnidadMedida;
-  costoTanda: Decimal;
-  costoUnitario: Decimal; // costoTanda / rendimientoReceta
+  unidadesPorVenta: Decimal; // 4 en un pack de 4 brownies; 1 en lo demás (D60)
+  costoTanda: Decimal; // ingredientes y sub-recetas de la tanda, sin empaques
+  costoEmpaque: Decimal; // empaques por lo que se vende (0 en INTERMEDIO)
+  costoUnitario: Decimal; // de lo que se vende: costoTanda / rendimiento × unidadesPorVenta + costoEmpaque
+  costoPorUnidad: Decimal; // costoUnitario / unidadesPorVenta (un brownie del pack)
   precioVenta: Decimal | null;
-  gananciaUnitaria: Decimal | null; // precioVenta - costoUnitario
+  gananciaUnitaria: Decimal | null; // precioVenta - costoUnitario (por lo que se vende)
+  gananciaPorUnidad: Decimal | null; // gananciaUnitaria / unidadesPorVenta
   margenPorcentaje: Decimal | null; // gananciaUnitaria / precioVenta × 100
   insumos: LineaInsumo[];
   subRecetas: LineaSubReceta[];
@@ -64,6 +71,7 @@ export async function calcularCostoProducto(
     throw new AppError(404, `No existe el producto ${productoId}.`);
   }
 
+  const esVenta = producto.tipo === TipoProducto.VENTA;
   const insumos: LineaInsumo[] = producto.ingredientes.map(({ cantidad, insumo }) => {
     const costoUnitario = costoUnitarioInsumo(insumo);
     return {
@@ -73,6 +81,7 @@ export async function calcularCostoProducto(
       cantidad,
       costoUnitario,
       costo: cantidad.mul(costoUnitario),
+      esEmpaque: esVenta && insumo.categoria === CategoriaInsumo.EMPAQUE,
     };
   });
 
@@ -89,11 +98,11 @@ export async function calcularCostoProducto(
     });
   }
 
-  const costoTanda = [...insumos, ...subRecetas].reduce(
-    (total, linea) => total.add(linea.costo),
-    new Prisma.Decimal(0),
-  );
-  const costoUnitario = costoTanda.div(producto.rendimientoReceta);
+  const cero = new Prisma.Decimal(0);
+  const costoTanda = [...insumos.filter((l) => !l.esEmpaque), ...subRecetas].reduce((total, linea) => total.add(linea.costo), cero);
+  const costoEmpaque = insumos.filter((l) => l.esEmpaque).reduce((total, linea) => total.add(linea.costo), cero);
+  const unidadesPorVenta = esVenta ? producto.unidadesPorVenta : new Prisma.Decimal(1);
+  const costoUnitario = costoTanda.div(producto.rendimientoReceta).mul(unidadesPorVenta).add(costoEmpaque);
   const { precioVenta } = producto;
   const gananciaUnitaria = precioVenta ? precioVenta.sub(costoUnitario) : null;
   const margenPorcentaje =
@@ -105,10 +114,14 @@ export async function calcularCostoProducto(
     tipo: producto.tipo,
     rendimientoReceta: producto.rendimientoReceta,
     unidadRendimiento: producto.unidadRendimiento,
+    unidadesPorVenta,
     costoTanda,
+    costoEmpaque,
     costoUnitario,
+    costoPorUnidad: costoUnitario.div(unidadesPorVenta),
     precioVenta,
     gananciaUnitaria,
+    gananciaPorUnidad: gananciaUnitaria ? gananciaUnitaria.div(unidadesPorVenta) : null,
     margenPorcentaje,
     insumos,
     subRecetas,

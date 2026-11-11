@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
-import { TipoProducto, UnidadMedida, type Producto } from "@prisma/client";
+import { CategoriaInsumo, TipoProducto, UnidadMedida, type Producto } from "@prisma/client";
 import { prisma } from "../prisma";
 import { AppError } from "../errors";
+import { crearRespaldo } from "../services/backup";
 import { calcularCostoProducto, verificarSinCiclos } from "../services/costeo";
 import { alMenosUnCampo, decimalNoNegativo, decimalPositivo, nombre, parseId } from "../validacion";
 
@@ -13,6 +14,7 @@ const productoSchema = z.object({
   rendimientoReceta: decimalPositivo,
   unidadRendimiento: z.nativeEnum(UnidadMedida).optional(),
   precioVenta: decimalNoNegativo.nullable().optional(),
+  unidadesPorVenta: decimalPositivo.optional(), // unidades de la receta en lo que se vende: 4 en un pack de 4 (D60)
   activo: z.boolean().optional(),
   disponible: z.boolean().optional(),
 });
@@ -41,16 +43,14 @@ const filtrosSchema = z.object({
 
 async function buscarProducto(id: number): Promise<Producto> {
   const producto = await prisma.producto.findUnique({ where: { id } });
-  if (!producto) throw new AppError(404, `No existe el producto ${id}.`);
+  if (!producto || producto.eliminado) throw new AppError(404, `No existe el producto ${id}.`);
   return producto;
 }
 
 async function resumenConCosto(producto: Producto) {
-  const { costoTanda, costoUnitario, gananciaUnitaria, margenPorcentaje } = await calcularCostoProducto(
-    prisma,
-    producto.id,
-  );
-  return { ...producto, costoTanda, costoUnitario, gananciaUnitaria, margenPorcentaje };
+  const { costoTanda, costoEmpaque, costoUnitario, costoPorUnidad, gananciaUnitaria, gananciaPorUnidad, margenPorcentaje } =
+    await calcularCostoProducto(prisma, producto.id);
+  return { ...producto, costoTanda, costoEmpaque, costoUnitario, costoPorUnidad, gananciaUnitaria, gananciaPorUnidad, margenPorcentaje };
 }
 
 export const productosRouter = Router();
@@ -59,7 +59,8 @@ export const productosRouter = Router();
 
 productosRouter.get("/", async (req, res) => {
   const { tipo, activo, disponible } = filtrosSchema.parse(req.query);
-  const productos = await prisma.producto.findMany({ where: { tipo, activo, disponible }, orderBy: { nombre: "asc" } });
+  // Las recetas borradas que tenían ventas (D63) no se listan en ningún lado.
+  const productos = await prisma.producto.findMany({ where: { tipo, activo, disponible, eliminado: false }, orderBy: { nombre: "asc" } });
   res.json(await Promise.all(productos.map(resumenConCosto)));
 });
 
@@ -89,21 +90,84 @@ productosRouter.patch("/:id", async (req, res) => {
   res.json(await resumenConCosto(producto));
 });
 
+// Borrar una categoría entera (D64): todas sus recetas del mismo tipo, con la regla de D63 para cada una
+// (sin ventas se borra del todo; con ventas queda `eliminado` y sus ventas siguen en el Historial).
+// Antes se hace un respaldo automático. Si un relleno de la categoría se usa en una receta de otra categoría,
+// no se borra nada (409) y se dice dónde.
+const tipoCategoriaSchema = z.object({ tipo: z.nativeEnum(TipoProducto).default(TipoProducto.VENTA) });
+
+productosRouter.delete("/categorias/:categoria", async (req, res) => {
+  const categoria = String(req.params.categoria).trim();
+  const { tipo } = tipoCategoriaSchema.parse(req.query);
+  const productos = await prisma.producto.findMany({ where: { categoria, tipo, eliminado: false }, select: { id: true, nombre: true } });
+  if (productos.length === 0) throw new AppError(404, `No existe la categoría "${categoria}".`);
+  const ids = productos.map((p) => p.id);
+
+  const usosAfuera = await prisma.componenteReceta.findMany({
+    where: { subProductoId: { in: ids }, productoId: { notIn: ids }, producto: { eliminado: false } },
+    include: { producto: { select: { nombre: true } }, subProducto: { select: { nombre: true } } },
+  });
+  if (usosAfuera.length > 0) {
+    throw new AppError(
+      409,
+      `No se borró nada: ${usosAfuera.map((u) => `"${u.subProducto.nombre}" se usa en "${u.producto.nombre}"`).join("; ")}. Quítalo de esas recetas primero.`,
+    );
+  }
+
+  const respaldo = await crearRespaldo(prisma);
+  const [conVentas, conHistoricas] = await Promise.all([
+    prisma.venta.groupBy({ by: ["productoId"], where: { productoId: { in: ids } } }),
+    prisma.ventaHistorica.groupBy({ by: ["productoId"], where: { productoId: { in: ids } } }),
+  ]);
+  const conservan = new Set([...conVentas, ...conHistoricas].map((v) => v.productoId));
+  const aBorrar = ids.filter((id) => !conservan.has(id));
+  const aArchivar = ids.filter((id) => conservan.has(id));
+
+  await prisma.$transaction([
+    // Primero las recetas (una puede usar a otra de la misma categoría), después los productos.
+    prisma.componenteReceta.deleteMany({ where: { productoId: { in: ids } } }),
+    prisma.ingredienteReceta.deleteMany({ where: { productoId: { in: ids } } }),
+    prisma.precioCliente.deleteMany({ where: { productoId: { in: ids } } }),
+    prisma.producto.updateMany({ where: { id: { in: aArchivar } }, data: { eliminado: true, activo: false } }),
+    prisma.producto.deleteMany({ where: { id: { in: aBorrar } } }),
+  ]);
+  res.json({
+    categoria,
+    borradas: productos.map((p) => p.nombre),
+    conservanVentas: productos.filter((p) => conservan.has(p.id)).map((p) => p.nombre),
+    respaldo: respaldo.archivo,
+  });
+});
+
+// Borra la receta (D63). Sin ventas, el producto se borra del todo. Con ventas (Caja o historial), se borran su
+// receta y sus precios acordados y queda marcado `eliminado`: no aparece en Recetas ni en la Caja, pero sus
+// ventas siguen en el Historial con su nombre. Un relleno que otra receta usa no se borra hasta quitarlo de ahí.
 productosRouter.delete("/:id", async (req, res) => {
   const id = parseId(req.params.id);
   const producto = await buscarProducto(id);
-  const [ventas, usos] = await Promise.all([
+  const usadoEn = await prisma.componenteReceta.findMany({ where: { subProductoId: id }, include: { producto: { select: { nombre: true } } } });
+  if (usadoEn.length > 0) {
+    throw new AppError(
+      409,
+      `"${producto.nombre}" se usa en: ${usadoEn.map((u) => u.producto.nombre).join(", ")}. Quítalo de esas recetas primero.`,
+    );
+  }
+  const [ventas, historicas] = await Promise.all([
     prisma.venta.count({ where: { productoId: id } }),
-    prisma.componenteReceta.count({ where: { subProductoId: id } }),
+    prisma.ventaHistorica.count({ where: { productoId: id } }),
   ]);
-  if (ventas > 0) {
-    throw new AppError(409, `"${producto.nombre}" tiene ${ventas} venta(s) registradas. Márcalo como inactivo.`);
+  if (ventas + historicas === 0) {
+    await prisma.producto.delete({ where: { id } }); // la receta se borra en cascada
+    res.json({ borrado: id, conservaVentas: false });
+    return;
   }
-  if (usos > 0) {
-    throw new AppError(409, `"${producto.nombre}" se usa como sub-receta en otros productos. Quítalo de esas recetas primero.`);
-  }
-  await prisma.producto.delete({ where: { id } }); // la receta se borra en cascada
-  res.status(204).end();
+  await prisma.$transaction([
+    prisma.ingredienteReceta.deleteMany({ where: { productoId: id } }),
+    prisma.componenteReceta.deleteMany({ where: { productoId: id } }),
+    prisma.precioCliente.deleteMany({ where: { productoId: id } }),
+    prisma.producto.update({ where: { id }, data: { eliminado: true, activo: false } }),
+  ]);
+  res.json({ borrado: id, conservaVentas: true });
 });
 
 // ---------- Costo ----------
@@ -122,10 +186,15 @@ productosRouter.put("/:id/receta", async (req, res) => {
   await buscarProducto(id);
 
   const insumoIds = receta.ingredientes.map((i) => i.insumoId);
-  const encontrados = await prisma.insumo.findMany({ where: { id: { in: insumoIds } }, select: { id: true } });
+  const encontrados = await prisma.insumo.findMany({ where: { id: { in: insumoIds } }, select: { id: true, nombre: true, categoria: true } });
   const faltantes = insumoIds.filter((insumoId) => !encontrados.some((e) => e.id === insumoId));
   if (faltantes.length > 0) {
     throw new AppError(404, `No existen los insumos: ${faltantes.join(", ")}.`);
+  }
+  // «Limpieza y otros» es un gasto (se carga en Gastos), no sube el costo de los productos (D60).
+  const gastos = encontrados.filter((e) => e.categoria === CategoriaInsumo.GASTO_INDIRECTO);
+  if (gastos.length > 0) {
+    throw new AppError(422, `"${gastos.map((g) => g.nombre).join('", "')}" es un gasto, no va en la receta. Cárgalo en Gastos.`);
   }
 
   const subIds = receta.subRecetas.map((s) => s.subProductoId);

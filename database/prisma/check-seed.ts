@@ -7,23 +7,24 @@ import { calcularCostoProducto } from "../../backend/src/services/costeo";
 
 const TOLERANCIA = new Prisma.Decimal("0.001");
 
-// Costo esperado (Bs), CONTEXT.md §4: por tanda para los INTERMEDIO, por unidad para los de VENTA.
+// Costo esperado (Bs), CONTEXT.md §4: por tanda para los INTERMEDIO, por lo que se vende para los de VENTA (un pack entero).
+// Desde D60 sin «Limpieza y otros» (es un gasto) y con los empaques por lo vendido.
 export const costosEsperados: Record<string, string> = {
-  "Relleno de Nido": "32.4266",
-  "Relleno de Brigadeiro": "28.2266",
-  Queque: "17.3059",
-  "Queque molde grande": "19.3229",
-  "Queque de quinoa": "4.0173",
-  "Queque con relleno": "20.6054",
-  "Queque base (histórico)": "6.6981",
+  "Relleno de Nido": "31.9266",
+  "Relleno de Brigadeiro": "27.7266",
+  Queque: "16.9083",
+  "Queque molde grande": "19.1810",
+  "Queque de quinoa": "3.8923",
+  "Queque con relleno": "20.2046",
+  "Queque base (histórico)": "6.5929",
   // Fase 6 — Brownies (CONTEXT.md §4b)
-  "Brownies (masa)": "15.3334",
-  "Brownies clásicos 4 u": "10.6039",
-  "Brownies premium 4 u": "14.9539",
-  "Brownies clásicos 9 u": "18.8587",
-  "Brownies premium 9 u": "31.9087",
-  "Brownies 16 u": "3.3839",
-  "Brownie personal premium": "4.7910",
+  "Brownies (masa)": "14.8334",
+  "Brownies clásicos 4 u": "9.8885",
+  "Brownies premium 4 u": "14.2385",
+  "Brownies clásicos 9 u": "17.8742",
+  "Brownies premium 9 u": "30.9242",
+  "Brownies 16 u": "3.3526",
+  "Brownie personal premium": "4.2371",
   // Fase 6 — Flanes (CONTEXT.md §4)
   Chocoflan: "6.4286",
   "Quesillo venezolano": "7.2975",
@@ -33,13 +34,13 @@ export const costosEsperados: Record<string, string> = {
   "Topping tres leches grande": "27.2500",
   "Topping tres leches mega": "33.2500",
   "Fresas con crema": "9.1750",
-  "Fresas con crema y brownie": "12.3779",
-  "Fresas con crema, brownie y Nutella": "14.0879",
+  "Fresas con crema y brownie": "12.2164",
+  "Fresas con crema, brownie y Nutella": "13.9264",
   "Frutillas bañadas en chocolate": "14.5500",
-  "Tres leches personal": "8.3721",
-  "Tres leches": "25.5024",
-  "Tres leches familiar": "59.6344",
-  "Tres leches mega": "69.0996",
+  "Tres leches personal": "7.8721",
+  "Tres leches": "25.0024",
+  "Tres leches familiar": "59.1344",
+  "Tres leches mega": "68.5996",
 };
 
 async function main(): Promise<void> {

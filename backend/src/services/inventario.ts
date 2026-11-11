@@ -1,8 +1,9 @@
 // Inventario de insumos: consumo por receta y movimientos de stock.
 // Regla (CONTEXT.md §5): vender N unidades descuenta cantidad × N / rendimientoReceta de cada insumo,
-// y de forma recursiva los insumos de cada sub-receta.
+// y de forma recursiva los insumos de cada sub-receta. Producto de venta (D60): N es lo vendido × unidadesPorVenta
+// y los empaques se descuentan enteros, uno por cada cosa vendida (1 caja por pack).
 
-import { Prisma, TipoMovimiento, type Insumo } from "@prisma/client";
+import { CategoriaInsumo, Prisma, TipoMovimiento, TipoProducto, type Insumo } from "@prisma/client";
 import type { Db } from "../prisma";
 import { AppError } from "../errors";
 
@@ -21,14 +22,17 @@ export async function explotarInsumos(
   }
   const producto = await db.producto.findUnique({
     where: { id: productoId },
-    include: { ingredientes: true, subRecetas: true },
+    include: { ingredientes: { include: { insumo: { select: { categoria: true } } } }, subRecetas: true },
   });
   if (!producto) throw new AppError(404, `No existe el producto ${productoId}.`);
 
-  const tandas = unidades.div(producto.rendimientoReceta);
-  for (const { insumoId, cantidad } of producto.ingredientes) {
+  // `unidades` de un producto de venta es lo vendido (packs); de un intermedio, lo que usa la receta de arriba.
+  const esVenta = producto.tipo === TipoProducto.VENTA;
+  const tandas = (esVenta ? unidades.mul(producto.unidadesPorVenta) : unidades).div(producto.rendimientoReceta);
+  for (const { insumoId, cantidad, insumo } of producto.ingredientes) {
     const previo = consumo.get(insumoId) ?? new Prisma.Decimal(0);
-    consumo.set(insumoId, previo.add(cantidad.mul(tandas)));
+    const porLoVendido = esVenta && insumo.categoria === CategoriaInsumo.EMPAQUE;
+    consumo.set(insumoId, previo.add(cantidad.mul(porLoVendido ? unidades : tandas)));
   }
   for (const { subProductoId, cantidad } of producto.subRecetas) {
     await explotarInsumos(db, subProductoId, cantidad.mul(tandas), [...ruta, productoId], consumo);

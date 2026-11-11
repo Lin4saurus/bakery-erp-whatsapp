@@ -1,4 +1,4 @@
-/* Caja: columna izquierda (familias, sabores, no disponibles, fiados) y derecha (cliente, pedido, ventas de hoy). */
+/* Caja: columna izquierda (familias y sabores) y derecha (cliente y pedido). */
 .caja {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
@@ -8,11 +8,6 @@
 
 .caja__separador {
   height: var(--space-2);
-}
-
-.caja__por-cobrar {
-  margin-top: var(--space-3);
-  scroll-margin-top: calc(var(--topbar-height) + var(--space-2));
 }
 
 .resumen-venta {
@@ -344,3 +339,33 @@
     grid-template-rows: none !important;
   }
 }
+
+/* Cliente nuevo: se elige si se guarda como minorista (por defecto) o mayorista. */
+.caja__tipo-nuevo {
+  display: inline-flex;
+  margin-top: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.caja__tipo-opcion {
+  border: 0;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  padding: 6px 16px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.caja__tipo-opcion + .caja__tipo-opcion {
+  border-left: 1px solid var(--color-border);
+}
+
+.caja__tipo-opcion--elegida {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+

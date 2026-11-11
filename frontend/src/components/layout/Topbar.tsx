@@ -21,7 +21,7 @@ export function Topbar({
         <MdMenu />
       </button>
       <div className="topbar__titulo">
-        <span className="topbar__ruta">Dulzura / {titulo}</span>
+        <span className="topbar__ruta">Dulzura Pastelería / {titulo}</span>
         <span className="topbar__pagina">{titulo}</span>
       </div>
       <div className="topbar__derecha">
@@ -39,7 +39,7 @@ export function Topbar({
             D
           </span>
           <span className="topbar__perfil-texto">
-            <strong>Dulzura</strong>
+            <strong>Dulzura Pastelería</strong>
             <span>Administración</span>
           </span>
         </div>

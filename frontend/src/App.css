@@ -38,3 +38,10 @@
     font-size: 22px;
   }
 }
+
+/* Menú de solo íconos (D62). */
+@media (min-width: 1001px) {
+  .app--colapsado {
+    --sidebar-width: 64px;
+  }
+}

@@ -19,8 +19,8 @@ enum UnidadMedida {
 
 enum CategoriaInsumo {
   MATERIA_PRIMA   // harina, azúcar, mantequilla...
-  EMPAQUE         // platillos, etiquetas, envases
-  GASTO_INDIRECTO // limpieza y otros
+  EMPAQUE         // platillos, etiquetas, envases, cajas, film: van una vez por lo que se vende, no se dividen (D60)
+  GASTO_INDIRECTO // limpieza y otros: es un gasto, no entra en las recetas (D60)
 }
 
 enum TipoProducto {
@@ -28,10 +28,6 @@ enum TipoProducto {
   INTERMEDIO // sub-receta que solo se usa dentro de otras (ej. Relleno de Nido)
 }
 
-enum EstadoPago {
-  PAGADO
-  PENDIENTE // fiado: se entregó y se cobra después
-}
 
 
 enum TipoMovimiento {
@@ -58,6 +54,7 @@ model Insumo {
 
   ingredientes IngredienteReceta[]
   movimientos  MovimientoInventario[]
+  compras      GastoOperativo[] // compras cargadas en Gastos (D51)
 }
 
 model Producto {
@@ -68,8 +65,13 @@ model Producto {
   rendimientoReceta Decimal // lo que sale de una tanda, en unidadRendimiento (ej. 4.75 queques, 1240 g de relleno)
   unidadRendimiento UnidadMedida @default(UNIDAD)
   precioVenta       Decimal? // Bs, venta en tienda (null en INTERMEDIO)
+  // Cuántas unidades de la receta van en lo que se vende a precioVenta: 4 en «Brownies clásicos 4 u», 1 en lo demás (D60).
+  // Costo de lo vendido = ingredientes ÷ rendimiento × unidadesPorVenta + empaques (los empaques no se dividen).
+  unidadesPorVenta  Decimal      @default(1)
   activo            Boolean      @default(true) // sigue en el catálogo; false = retirado (ej. receta histórica)
   disponible        Boolean      @default(true) // a la venta ahora en la Caja (productos de temporada se apagan)
+  // Receta borrada de un producto que tiene ventas (D63): no se ve en Recetas ni en la Caja; sus ventas siguen en el Historial.
+  eliminado         Boolean      @default(false)
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
@@ -81,7 +83,8 @@ model Producto {
   preciosCliente   PrecioCliente[]
 }
 
-// Receta (BOM): cantidad de cada insumo para UNA tanda del producto.
+// Receta (BOM): cantidad de cada insumo para UNA tanda del producto. Los EMPAQUE de un producto de venta van
+// por lo que se vende (1 caja, 1 etiqueta), no por tanda (D60).
 model IngredienteReceta {
   id         Int     @id @default(autoincrement())
   productoId Int
@@ -121,12 +124,10 @@ model Venta {
   totalVenta     Decimal // precioUnitario * cantidad
   costoTotal     Decimal // costoUnitario * cantidad
   gananciaBruta  Decimal // totalVenta - costoTotal
-  estadoPago     EstadoPago @default(PAGADO)
-  cliente        String? // nombre: obligatorio en fiados; con clienteId se copia el nombre del cliente
+  cliente        String? // nombre del cliente (con clienteId se copia el de su ficha); toda venta se cobra al momento (D74)
   clienteId      String? // cliente registrado (mayorista o minorista con ficha)
-  sabores        String? // desglose de sabores, separado por comas (ej. "Coco, Oreo")
+  sabor          String? // sabor de una línea cuyo producto no lo dice en el nombre (ej. Queque con relleno · Coco) (D57)
   pedidoId       String? // las líneas de un mismo pedido de la Caja comparten este id (D48); null = venta suelta anterior
-  fechaPago      DateTime? // cuándo se cobró (ventas que fueron fiadas)
   anulada         Boolean   @default(false) // no cuenta en totales; su stock se devolvió
   fechaAnulacion  DateTime?
   motivoAnulacion String?
@@ -138,7 +139,6 @@ model Venta {
 
   @@index([fecha])
   @@index([productoId])
-  @@index([estadoPago])
   @@index([clienteId])
   @@index([pedidoId])
 }
@@ -156,6 +156,7 @@ model MovimientoInventario {
 
   insumo Insumo @relation(fields: [insumoId], references: [id], onDelete: Restrict)
   venta  Venta? @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+  gasto  GastoOperativo? // si la compra se cargó en Gastos (D51)
 
   @@index([insumoId, fecha])
   @@index([ventaId])
@@ -179,7 +180,7 @@ model VentaHistorica {
   utilidad         Decimal? // tal como figura en el Excel; null si no se conoce
   cliente          String? // solo el nombre; sin correo ni celular
   clienteId        String? // cliente registrado, si se identificó
-  sabores          String? // desglose de sabores, separado por comas
+  linea            Int        @default(0) // un pedido de varios sabores es una línea por sabor, misma hoja + fila (D57)
   // Correcciones de la dueña desde el Historial (D43): reimportar el Excel/notas no las pisa.
   editada          Boolean    @default(false)
   eliminada        Boolean    @default(false) // no se muestra ni suma; queda para que reimportar no la reviva
@@ -187,7 +188,7 @@ model VentaHistorica {
   producto          Producto? @relation(fields: [productoId], references: [id], onDelete: SetNull)
   clienteRegistrado Cliente?  @relation(fields: [clienteId], references: [id], onDelete: SetNull)
 
-  @@unique([hoja, fila])
+  @@unique([hoja, fila, linea])
   @@index([fecha])
   @@index([productoId])
   @@index([clienteId])
@@ -197,6 +198,7 @@ enum CategoriaGasto {
   LIMPIEZA     // esponjas, lavavajillas…
   EQUIPAMIENTO // moldes, toppers…
   USO_PERSONAL // lo que la dueña gasta en sí misma con plata del negocio
+  INSUMOS // compra de un insumo de receta: suma al stock y no se resta otra vez en la utilidad (D51)
   OTROS
 }
 
@@ -209,8 +211,16 @@ model GastoOperativo {
   monto       Decimal // Bs
   categoria   CategoriaGasto
   createdAt   DateTime       @default(now())
+  // Solo en INSUMOS: qué insumo se compró, cuánto (en su unidad base) y el movimiento de stock que generó.
+  insumoId     Int?
+  cantidad     Decimal?
+  movimientoId Int?     @unique
+
+  insumo     Insumo?               @relation(fields: [insumoId], references: [id], onDelete: Restrict)
+  movimiento MovimientoInventario? @relation(fields: [movimientoId], references: [id], onDelete: SetNull)
 
   @@index([fecha])
+  @@index([insumoId])
 }
 
 // ---------- Fase 8: clientes y listas de precios ----------

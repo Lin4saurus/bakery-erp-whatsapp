@@ -151,7 +151,7 @@
 
 .historial__editor {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(120px, 240px)) auto;
   gap: var(--space-2);
   /* Arriba: así las etiquetas y los campos quedan en la misma línea aunque algunos tengan ayuda debajo. */
   align-items: start;
@@ -179,4 +179,171 @@
   .historial__editor {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* Pedido de varios productos (D54): una fila con cliente y total; ▶ despliega sus productos. */
+.historial__desplegar {
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.historial__desplegar span {
+  display: inline-block;
+  width: 14px;
+  color: var(--color-primary);
+  font-size: 11px;
+}
+
+/* Jerarquía del pedido desplegado: fila del pedido > familia (13 px) > producto (11 px, ~15 % menos). */
+.historial__linea td {
+  background: var(--color-surface-muted);
+  font-size: 11px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+/* Editar / Eliminar de cada producto: compactos para que la fila sea baja. */
+.historial__linea .historial__acciones button {
+  padding: 1px 8px;
+  font-size: 11px;
+  min-height: 0;
+}
+
+.historial__rama {
+  color: var(--color-text-secondary);
+  font-family: monospace;
+  font-size: 10px;
+  padding-left: 14px;
+}
+
+.historial__linea td:nth-child(2) {
+  white-space: nowrap;
+}
+
+/* Separador de familia dentro de un pedido desplegado (D55). */
+.historial__familia td {
+  background: var(--color-surface-muted);
+  padding-top: 6px;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.historial__familia-nombre {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-primary);
+}
+
+.historial__desplegar {
+  text-align: left;
+}
+
+/* Editar / Eliminar de un producto dentro de un pedido: misma escala chica que sus líneas. */
+.historial__linea-form td {
+  background: var(--color-surface-muted);
+  padding-top: 6px;
+  padding-bottom: 8px;
+  font-size: 11px;
+}
+
+.historial__linea-form .historial__editor {
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(100px, 200px)) auto;
+}
+
+.historial__linea-form .campo {
+  gap: 3px;
+}
+
+.historial__linea-form .campo-etiqueta {
+  font-size: 11px;
+}
+
+.historial__linea-form .campo-ayuda {
+  font-size: 10px;
+}
+
+.historial__linea-form input,
+.historial__linea-form select {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.historial__linea-form button {
+  padding: 3px 10px;
+  font-size: 11px;
+  min-height: 0;
+}
+
+.historial__linea-form .historial__confirmar {
+  gap: 8px;
+}
+
+/* Desempeño (D68): semana arriba y meses abajo, en la misma columna; los días se tocan como los meses. */
+.historial__graficos {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+}
+
+.historial__dias {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.historial__graficos > .panel {
+  margin: 0;
+}
+
+/* Fila del pedido tocable (D71): se marca al pasar el mouse, salvo la celda de Eliminar. */
+.historial__pedido--tocable {
+  cursor: pointer;
+}
+
+.historial__pedido--tocable:hover td {
+  background: var(--color-surface-muted);
+}
+
+.historial__pedido--tocable .historial__acciones {
+  cursor: default;
+}
+
+/* «Por producto» sin cabecera, como «Ventas de hoy» (D73). */
+.historial__por-producto td:last-child {
+  white-space: nowrap;
+}
+
+/* Desempeño más compacto (D75): tarjetas y gráficos con menos relleno. */
+.desempeno .grilla-tarjetas {
+  margin-bottom: var(--space-2);
+}
+
+.desempeno .tarjeta {
+  padding: 12px 20px;
+}
+
+.desempeno .tarjeta-valor {
+  margin-top: 4px;
+}
+
+.desempeno .tarjeta-detalle {
+  margin-top: 2px;
+}
+
+.desempeno .historial__grafico {
+  padding: 8px 20px 12px;
+}
+
+.desempeno .historial__nota {
+  margin-top: 8px;
+}
+
+.desempeno .historial__graficos {
+  gap: var(--space-2);
 }

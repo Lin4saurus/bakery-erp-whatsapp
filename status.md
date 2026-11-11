@@ -244,7 +244,7 @@ Decisión D44. Sin migración (el celular ya existía en `Cliente`).
 - [x] 24 insumos con precio del Excel (7 nuevos); 11 queques nuevos a Bs 16. Costos verificados contra el Excel: Vainilla/Naranja/Limón/Frutilla 5,78; Zanahoria 9,07; Marliza Chavez 6,99.
 - [x] Cantidades corregidas a 10 g (Oreo, Almendra, Coco, Marmolado) y 15 g (cacao del Chocolate): Oreo/Almendra/Coco 6,68; Marmolado 7,48; Chocolate 8,33. Respaldo previo `dulzura_2026-11-09_10-45-16.db.gz`.
 - [ ] `seed.ts` todavía crea los queques anteriores: un `db:reset` los traería de vuelta.
-- [ ] Caja: los sabores de mayorista (Vainilla, Coco…) se piensan para el «Queque» genérico; ahora cada sabor es un producto.
+- [x] Caja: los sabores de mayorista (Vainilla, Coco…) se piensan para el «Queque» genérico; ahora cada sabor es un producto (resuelto en D57).
 
 ## Recetas: sin tarjeta «Costo de la tanda» — COMPLETADO
 - [x] Quitada la tarjeta; el dato «La receta rinde N» pasó a la tarjeta «Costo por unidad». Verificado en el navegador.
@@ -286,3 +286,107 @@ Decisión D44. Sin migración (el celular ya existía en `Cliente`).
 ## Historial: «Queque» → «Queque Vainilla» (D50) — COMPLETADO
 - [x] Respaldo `dulzura_2026-11-09_19-15-46.db.gz`. 1 venta de Caja (03-nov, costo recalculado a 5,78) y 13 notas mayoristas 2026 pasan a Queque Vainilla. En Historial: Queque Vainilla 204 u, Bs 2.602; ganancia bruta 2026 de Bs 121,75 a Bs 133,27.
 - [x] `importar-historico.ts` ya agrupa «Queque» como «Queque Vainilla». Tests 76/76.
+
+## Inicio sin «Rentabilidad por producto» — COMPLETADO
+- [x] Quitado el panel (la rentabilidad se ve en Recetas y precios); «Ventas de hoy» ocupa todo el ancho. Verificado en el navegador.
+- [x] «Acción rápida»: la dueña eligió la propuesta 1. El botón verde «Registrar pedido» va en la cabecera, junto a «Actualizar»; las tarjetas de arriba quedan en 3 columnas (2 bajo 1000 px). Verificado en el navegador.
+
+## Gastos: compra de insumos (D51) — COMPLETADO
+- [x] Respaldo `dulzura_2026-11-09_19-39-40.db.gz`. Migración `gasto_compra_insumo` (GastoOperativo.insumoId, cantidad, movimientoId; categoría INSUMOS).
+- [x] API: POST /gastos con INSUMOS suma al stock (COMPRA) y puede actualizar el precio del envase; DELETE descuenta lo sumado; GET devuelve `totalOperativo`. Inicio resta solo `totalOperativo`.
+- [x] Pantalla Gastos: «Compra de insumos» (por defecto), insumo, envases o cantidad, pagado, descripción opcional, aviso de lo que entra al stock y del cambio de precio. Tests: 3 nuevos (79/79). Verificado en el navegador sin guardar.
+- [x] Unificado: botón «Registrar compra» en Insumos abre Gastos con el insumo elegido (verificado en el navegador); `POST /insumos/:id/movimientos` COMPRA también crea el gasto (`services/compras.ts`). Tests: 81/81 (≈57 s). Una corrida anterior quedó colgada con `test.db` bloqueado; se cerraron sus procesos y no volvió a pasar.
+- [x] La compra de insumos ya no ofrece lo marcado «No llevar stock» (Agua, «Limpieza y otros»): fuera de la lista de Gastos, sin botón «Registrar compra» en Insumos, y la API responde 422. Tests 81/81. Verificado en el navegador.
+
+## «Esencia» → «Esencia de vainilla» (D52) — COMPLETADO
+- [x] Respaldo `dulzura_2026-11-09_20-09-46.db.gz`. Renombrado el insumo en la BD real (id 4), en `seed.ts` y en `cargar-queques-2026.ts`; tabla de insumos de CONTEXT.md. Recetas, precio y stock sin cambios.
+- [x] Gastos: el botón Guardar queda alineado con los campos (etiqueta vacía arriba y mismo alto, 41 px), aunque «Envases» tenga ayuda debajo. Verificado midiendo en el navegador.
+- [x] Formulario de insumo (nuevo, editar, actualizar stock) más compacto: campos más bajos, menos espacio entre ellos, casilla y equivalencia más chicas. Aplica también al editar de Clientes (mismo `.panel-insumo`). Verificado en el navegador (1600 px).
+- [x] Inicio un 10 % más chico: el contenido va dentro de `.inicio` con `zoom: 0.9` (cajas, textos, números, íconos y gráfico a la vez; las demás pantallas no cambian). Sigue ocupando todo el ancho y sin barra horizontal. Verificado en el navegador (1600 px).
+- [x] Clientes un 10 % más chico, igual que el Inicio (`.clientes` con `zoom: 0.9`): lista, buscador, formulario de editar y las ventanas de Historial y Precios. Verificado en el navegador (la ventana cubre toda la pantalla).
+
+## Caja: tipo del cliente nuevo (D53) — COMPLETADO
+- [x] Con un cliente nuevo, la Caja muestra «Minorista | Mayorista» (Minorista por defecto) y lo envía como `clienteTipo`. La API lo usa solo al crear el cliente. Test nuevo; 82/82. Verificado en el navegador sin registrar.
+
+- [x] Caja: «Ventas de hoy» pasó a la columna izquierda, debajo de los productos, y «Por cobrar (fiado)» quedó debajo de ella. La columna derecha queda solo con Cliente y Pedido. Verificado en el navegador.
+
+## Historial: pedido en una fila desplegable (D54) — COMPLETADO
+- [x] Pedido de varios productos en una fila (cliente y tipo una vez, «▶ N productos», total) que despliega sus líneas con Editar/Eliminar; «Eliminar pedido» borra todo y devuelve el stock (`DELETE /api/ventas/pedidos/:pedidoId`). Contadores por pedido. Test nuevo; 83/83. Verificado en el navegador con la venta de prueba de linasarus (sin borrarla).
+- [x] Ventas de prueba de «linasarus» eliminadas (2026-11-10; el pedido del 09-nov ya no estaba, se borró el del 10-nov, Bs 62, y su stock volvió). Respaldo previo `dulzura_2026-11-10_21-27-16.db.gz`. También se borraron 3 ventas de prueba sin cliente del 03-nov (Queque de quinoa, molde grande y Vainilla, Bs 68; respaldo `dulzura_2026-11-10_21-29-25.db.gz`). Y el cliente de prueba «linasarus» (sin ventas ni precios; respaldo `dulzura_2026-11-10_21-31-12.db.gz`).
+
+## Historial: pedido agrupado por familia (D55) — COMPLETADO
+- [x] La fila del pedido muestra las familias («Brownies, Queques»); al desplegar, un separador por familia y los productos en orden alfabético con nombre corto. `familia` en las ventas de la API; `nombreCorto` en `formato.ts`. 83/83. Verificado en el navegador con el pedido de prueba (solo queques).
+
+## Clientes: precios del mayorista en ventana emergente (D56) — COMPLETADO
+- [x] «Precios» abre una ventana emergente (X, Esc o clic fuera). `Ventana` se dibuja con `createPortal` en `<body>` (con el `zoom` de Clientes quedaba detrás de la lista). Verificado en el navegador con Eliana.
+
+## Sin columna «Sabores»: una línea por sabor (D57) — COMPLETADO
+- [x] Respaldo `dulzura_2026-11-10_08-51-15.db.gz`. Migraciones `sabores_por_linea` (`VentaHistorica.linea`, `Venta.sabor`) y `quitar_sabores_texto`. Conversión única de 6 notas de 2026 y la venta del 08-nov (reparto parejo; montos y stock iguales). Reimportar da lo mismo (verificado).
+- [x] Historial y historial del cliente sin columna ni campo Sabores; las notas partidas se ven como pedido desplegable («▶ Queques», separador y sabores en orden alfabético); «Eliminar pedido» también para notas. Conteos por pedido. API sin `sabores` y sin la regla de más de 5 u. Tests 84/84. Verificado en el navegador.
+- [x] Historial: jerarquía del pedido desplegado — familia 13 px, productos 11 px (~15 % menos), conector 10 px; filas de producto de 44 a 29 px (Editar/Eliminar compactos) y familia de 33 a 27 px. Verificado en el navegador.
+- [x] Historial: el formulario de Editar y la confirmación de Eliminar de un producto dentro de un pedido usan la misma escala chica (etiquetas 11 px, campos de 28 px, botones compactos). Las ventas sueltas no cambian. Verificado en el navegador sin guardar.
+
+## El cliente de una venta no se corrige (D58) — COMPLETADO
+- [x] Editar del Historial sin campo Cliente (ventas de la Caja y anteriores, sueltas o dentro de un pedido). La API del historial ya no cambia el cliente. Test ajustado; 84/84. Verificado en el navegador sin guardar.
+
+## Recetas sin selector «Estado» (D59) — COMPLETADO
+- [x] Quitado el selector Activo/Inactivo del formulario del producto; al guardar se conserva el estado actual. Verificado en el navegador.
+
+## Empaques y packs (D60) — COMPLETADO
+- [x] Respaldo `dulzura_2026-11-10_17-22-20.db.gz`. Migración `empaques_por_venta` (`Producto.unidadesPorVenta`). En la BD real: packs de brownies con 4 / 9 unidades por paquete; empaques de los productos de tanda pasados a «por unidad»; 13 líneas de «Limpieza y otros» quitadas.
+- [x] Motor de costeo e inventario: empaques por lo vendido, ingredientes ÷ rinde × unidades por paquete. La receta rechaza insumos de gasto (422). Seed, `check-seed.ts` y `cargar-queques-2026.ts` con la misma regla.
+- [x] Recetas y precios: campo «Unidades por paquete», tabla en Ingredientes / Empaques, 4ª tarjeta «Ganancia total del pack» (Brownies clásicos 4 u: Bs 2,80 / Bs 30 / Bs 4,70 / Bs 18,82). Insumos: ayuda que explica cada categoría. Verificado en el navegador.
+
+## Recetas: productos por familia (D61) — COMPLETADO
+- [x] Lista de productos de venta en filas desplegables por familia (orden de la Caja), productos A–Z con ├─ / └─ y cantidad por familia. Verificado en el navegador.
+
+## Menú más angosto y colapsable (D62) — COMPLETADO
+- [x] Menú de 200 px; botón ‹ / › para dejarlo en 64 px con solo íconos (nombres al pasar el mouse, respaldo como ícono), recordado en el navegador. Verificado en el navegador en los dos estados.
+
+## Recetario: sin Inactivos, borrar receta, categorías (D63) — COMPLETADO
+- [x] Respaldo `dulzura_2026-11-10_18-04-23.db.gz`. Migración `producto_eliminado`. `DELETE /api/productos/:id` borra del todo o, si hay ventas, deja `eliminado` (fuera de listas y de la Caja; ventas intactas). Test nuevo.
+- [x] Recetas: queques retirados dentro de Queques; botón «Borrar receta» con confirmación; Categoría como selector con «+ Nueva categoría…». Verificado en el navegador sin borrar nada.
+- [x] Borrar una categoría entera: aprobado por la dueña y hecho en D64.
+
+## Borrar una categoría (D64) — COMPLETADO
+- [x] `DELETE /api/productos/categorias/:categoria` con respaldo previo, regla de D63 por receta y bloqueo si un relleno se usa en otra categoría. Recetas: papelera en cada familia y ventana que pide escribir el nombre. Test nuevo. Verificado en el navegador sin borrar (Flanes, cancelado).
+
+## Nombre Dulzura Pastelería (D65) — COMPLETADO
+- [x] Menú, barra superior, perfil y título de la pestaña dicen Dulzura Pastelería; ícono del botón de colapsar centrado (5 px a cada lado). Verificado en el navegador.
+
+## Toda la marca colapsa el menú (D66) — COMPLETADO
+- [x] Logo, nombre y flecha forman un solo botón que colapsa/expande el menú (solo en pantallas grandes). Verificado en el navegador tocando cada parte.
+
+## Consulta: Desempeño e Historial de ventas (D67) — COMPLETADO
+- [x] Menú Consulta con «Desempeño» (tarjetas, gráfico por mes que filtra tarjetas y productos, por producto) e «Historial de ventas» (lista con filtros). Verificado en el navegador: nov 2026 = Bs 355 en las dos.
+
+## Desempeño: semana, mes y Por producto (D68) — COMPLETADO
+- [x] Gráfico de la semana (como el Inicio) arriba y por mes abajo; tocar un día o mes filtra «Por producto»; al entrar, hoy. Verificado en el navegador: hoy (3 productos), domingo vacío, julio y vuelta al año.
+
+## Barras tocables en Desempeño (D69) — COMPLETADO
+- [x] Cada columna de los gráficos de semana y mes filtra «Por producto» al tocarla. Verificado en el navegador (sábado, agosto, enero sin ventas, vuelta al año).
+
+## Un solo nombre «Eliminar» (D70) — COMPLETADO
+- [x] Historial de ventas: «Eliminar pedido» → «Eliminar». Verificado en el navegador (solo quedan «Editar» y «Eliminar»).
+
+## Fila del pedido tocable (D71) — COMPLETADO
+- [x] Toda la fila del pedido despliega sus productos, salvo «Eliminar». Verificado en el navegador (cliente, total, flecha; Eliminar solo confirma, cancelado).
+
+## Inicio más útil y Clientes a tamaño normal (D72) — COMPLETADO
+- [x] Clientes sin zoom (14 px como Insumos). Alertas de stock con «Registrar compra» y «Actualizar stock». Barra de «Últimos 7 días» abre Desempeño con ese día. Sin «Top clientes» (borrado `TopClientesCard.tsx`). Verificado en el navegador los tres saltos, sin guardar nada.
+
+## Caja solo para vender; Por producto como lista (D73) — COMPLETADO
+- [x] Caja sin «Ventas de hoy» ni «Por cobrar». «Por producto» en formato «N × producto · Bs». Verificado en el navegador.
+- [x] Cobrar fiados: ya no aplica, la dueña no fía (D74).
+
+## Sin fiados (D74) — COMPLETADO
+- [x] Respaldo `dulzura_2026-11-10_19-45-03.db.gz`. Migración `quitar_fiados` (sin `estadoPago` ni `fechaPago`; 9 ventas y Bs 355 intactos). API sin pendientes ni cobrar. Caja, Inicio e Historial sin fiados. Tests de fiado reemplazados por uno que comprueba que ya no existen. Verificado en el navegador.
+
+## Desempeño más compacto (D75) — COMPLETADO
+- [x] Tarjetas 118 → 96 px (nota de ganancia en una línea); gráficos más bajos y con menos relleno. Verificado en el navegador.
+
+## Paneles compactos en todo el ERP (D76) — COMPLETADO
+- [x] Cabecera de panel 44 px (10 × 20) e interior 16 × 20 en todas las pantallas. Verificado midiendo Caja, Gastos, Clientes, Recetas, Insumos e Historial.
+
+## Inicio: Punto de equilibrio junto a Ventas de hoy (D77) — COMPLETADO
+- [x] Los dos bloques en una fila (661 px cada uno a 1640 px de ancho, mismo alto). Verificado en el navegador.

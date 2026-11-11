@@ -2,10 +2,12 @@
 // - `datos/ventas-historicas-2024.json`: hojas Semana 1–3 de "Dulzura ondrive (1).xlsx" (CONTEXT.md D24).
 // - `datos/notas-mayoristas-2026.json`: notas de venta a clientes mayoristas, jun–ago 2026 (D33, D38).
 // Es idempotente: cada venta se identifica por hoja + fila, así que reimportar actualiza en vez de duplicar.
+// Una nota con sabores («2 Coco, 1 Oreo») se guarda como una línea por sabor con su producto (D57).
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
+import { productoDelSabor, repartirMonto, repartirSabores } from "./sabores";
 
 const D = (valor: string): Prisma.Decimal => new Prisma.Decimal(valor);
 
@@ -76,7 +78,8 @@ export async function importarVentasHistoricas(db: PrismaClient): Promise<number
   const ventas = ARCHIVOS_HISTORICOS.filter((archivo) => existsSync(archivo)).flatMap(
     (archivo) => (JSON.parse(readFileSync(archivo, "utf-8")) as ArchivoHistorico).ventas,
   );
-  const productos = new Map((await db.producto.findMany()).map((p) => [p.nombre, p.id]));
+  const catalogo = await db.producto.findMany({ select: { id: true, nombre: true, categoria: true } });
+  const productos = new Map(catalogo.map((p) => [p.nombre, p.id]));
   // Solo se vinculan clientes que ya existen (los crea el seed); el resto queda con el nombre.
   const clientes = new Map((await db.cliente.findMany()).map((c) => [c.nombre, c.id]));
 
@@ -84,6 +87,17 @@ export async function importarVentasHistoricas(db: PrismaClient): Promise<number
   if (sinNombre.length > 0) {
     throw new Error(`Productos del Excel sin nombre agrupado: ${sinNombre.join(", ")}. Agrégalos en importar-historico.ts.`);
   }
+
+  // Una línea por sabor, cada una con el producto de ese sabor. Si algún sabor no tiene producto
+  // (BD de prueba, solo con el «Queque» genérico) o no cuadra, queda en una sola línea.
+  const porSabor = (venta: VentaExcel, productoId: number | null) => {
+    if (!venta.sabores) return null;
+    const reparto = repartirSabores(venta.sabores, Number(venta.cantidad));
+    const familia = catalogo.find((p) => p.id === productoId)?.categoria ?? null;
+    const lineas = reparto?.map((r) => ({ cantidad: r.cantidad, producto: productoDelSabor(catalogo, familia, r.sabor) }));
+    if (!lineas || lineas.some((l) => !l.producto)) return null;
+    return lineas as { cantidad: number; producto: (typeof catalogo)[number] }[];
+  };
 
   await db.$transaction(async (tx) => {
     // Cada archivo manda sobre sus hojas: se borran las filas que ya no figuran (p. ej. notas renumeradas).
@@ -102,7 +116,7 @@ export async function importarVentasHistoricas(db: PrismaClient): Promise<number
       const agrupado = nombres[venta.producto] ?? venta.producto;
       const respaldo = RESPALDO[agrupado];
       const productoNombre = !productos.has(agrupado) && respaldo && productos.has(respaldo) ? respaldo : agrupado;
-      const datos = {
+      const comun = {
         fecha: new Date(`${venta.fecha}T12:00:00`),
         fechaEstimada: venta.fechaEstimada,
         productoOriginal: venta.producto,
@@ -115,13 +129,34 @@ export async function importarVentasHistoricas(db: PrismaClient): Promise<number
         utilidad: venta.utilidad === null ? null : D(venta.utilidad),
         cliente: venta.cliente,
         clienteId: (venta.cliente && clientes.get(venta.cliente)) ?? null,
-        sabores: venta.sabores ?? null,
       };
-      await tx.ventaHistorica.upsert({
-        where: { hoja_fila: { hoja: venta.hoja, fila: venta.fila } },
-        create: { hoja: venta.hoja, fila: venta.fila, ...datos },
-        update: datos,
-      });
+      const lineas = porSabor(venta, comun.productoId);
+      const cantidades = lineas?.map((l) => l.cantidad) ?? [];
+      const valores = lineas && repartirMonto(comun.valor, cantidades);
+      const comisiones = lineas && repartirMonto(comun.comision, cantidades);
+      const costos = lineas && comun.costo && repartirMonto(comun.costo, cantidades);
+      const utilidades = lineas && comun.utilidad && repartirMonto(comun.utilidad, cantidades);
+      const filas = lineas
+        ? lineas.map((l, i) => ({
+            ...comun,
+            productoNombre: l.producto.nombre,
+            productoId: l.producto.id,
+            cantidad: D(String(l.cantidad)),
+            valor: valores?.[i] as Prisma.Decimal,
+            comision: comisiones?.[i] as Prisma.Decimal,
+            costo: costos?.[i] ?? null,
+            utilidad: utilidades?.[i] ?? null,
+          }))
+        : [comun];
+      for (const [linea, datos] of filas.entries()) {
+        await tx.ventaHistorica.upsert({
+          where: { hoja_fila_linea: { hoja: venta.hoja, fila: venta.fila, linea } },
+          create: { hoja: venta.hoja, fila: venta.fila, linea, ...datos },
+          update: datos,
+        });
+      }
+      // Si antes tenía más sabores, sobran líneas.
+      await tx.ventaHistorica.deleteMany({ where: { hoja: venta.hoja, fila: venta.fila, linea: { gte: filas.length } } });
     }
   });
   return ventas.length;

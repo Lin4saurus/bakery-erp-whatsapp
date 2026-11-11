@@ -28,9 +28,13 @@ export interface Producto {
   precioVenta: string | null;
   activo: boolean; // sigue en el catálogo
   disponible: boolean; // sin uso desde D49: todo producto activo se vende
-  costoTanda: string;
-  costoUnitario: string;
-  gananciaUnitaria: string | null;
+  unidadesPorVenta: string; // 4 en un pack de 4 brownies; 1 en lo demás (D60)
+  costoTanda: string; // ingredientes de la tanda, sin empaques
+  costoEmpaque: string; // empaques por lo que se vende
+  costoUnitario: string; // de lo que se vende (el pack entero)
+  costoPorUnidad: string; // costoUnitario / unidadesPorVenta
+  gananciaUnitaria: string | null; // por lo que se vende
+  gananciaPorUnidad: string | null;
   margenPorcentaje: string | null;
 }
 
@@ -41,6 +45,7 @@ export interface LineaInsumo {
   cantidad: string;
   costoUnitario: string;
   costo: string;
+  esEmpaque: boolean; // caja, etiqueta, envase…: va por lo que se vende, no por tanda (D60)
 }
 
 export interface LineaSubReceta {
@@ -58,10 +63,14 @@ export interface CostoProducto {
   tipo: TipoProducto;
   rendimientoReceta: string;
   unidadRendimiento: UnidadMedida;
+  unidadesPorVenta: string;
   costoTanda: string;
+  costoEmpaque: string;
   costoUnitario: string;
+  costoPorUnidad: string;
   precioVenta: string | null;
   gananciaUnitaria: string | null;
+  gananciaPorUnidad: string | null;
   margenPorcentaje: string | null;
   insumos: LineaInsumo[];
   subRecetas: LineaSubReceta[];
@@ -79,28 +88,22 @@ export interface Venta {
   id: number;
   productoId: number;
   producto: string;
+  familia?: string; // categoría del producto (Queques, Brownies…); viene en las listas de ventas (D55)
   cantidad: string;
   precioUnitario: string;
   costoUnitario: string;
   totalVenta: string;
   costoTotal: string;
   gananciaBruta: string;
-  estadoPago: "PAGADO" | "PENDIENTE";
   cliente: string | null;
   clienteId: string | null;
   clienteTipo: TipoCliente | null; // null = venta sin cliente registrado (minorista)
-  sabores: string | null;
+  sabor: string | null; // solo ventas partidas por sabor de un producto sin sabor en el nombre; ya viene en `producto` (D57)
   pedidoId: string | null; // líneas de un mismo pedido de la Caja (D48); null = venta suelta anterior
-  fechaPago: string | null;
   anulada: boolean;
   fechaAnulacion: string | null;
   motivoAnulacion: string | null;
   fecha: string;
-}
-
-export interface Pendientes {
-  total: string;
-  ventas: Venta[];
 }
 
 export interface VentaCreada {
@@ -115,7 +118,6 @@ export interface PedidoCreado {
   pedidoId: string;
   cliente: string;
   clienteNuevo: boolean;
-  estadoPago: "PAGADO" | "PENDIENTE";
   fecha: string;
   ventas: Venta[];
   unidades: string;
@@ -156,6 +158,7 @@ export interface DatosProducto {
   rendimientoReceta: string;
   unidadRendimiento: UnidadMedida;
   precioVenta: string | null;
+  unidadesPorVenta?: string;
   activo: boolean;
 }
 
@@ -196,7 +199,9 @@ export interface VentaHistorica {
   cliente: string | null;
   clienteId: string | null;
   clienteTipo: TipoCliente | null;
-  sabores: string | null;
+  familia: string | null; // Queques, Brownies… (D55)
+  linea: number; // una nota de varios sabores es una línea por sabor (D57)
+  pedidoId: string | null; // líneas de una misma nota; null si la nota es de un solo producto
 }
 
 export interface TotalesHistoricos {
@@ -215,7 +220,7 @@ export interface Historico {
   ventas: VentaHistorica[];
 }
 
-export type CategoriaGasto = "LIMPIEZA" | "EQUIPAMIENTO" | "USO_PERSONAL" | "OTROS";
+export type CategoriaGasto = "INSUMOS" | "LIMPIEZA" | "EQUIPAMIENTO" | "USO_PERSONAL" | "OTROS";
 
 export interface Gasto {
   id: string;
@@ -223,10 +228,14 @@ export interface Gasto {
   descripcion: string;
   monto: string;
   categoria: CategoriaGasto;
+  insumoId: number | null; // compra de insumos (D51)
+  cantidad: string | null; // en la unidad base del insumo
+  insumo: { nombre: string; unidadBase: UnidadMedida } | null;
 }
 
 export interface ListaGastos {
-  total: string;
+  total: string; // todo lo que salió
+  totalOperativo: string; // sin compra de insumos: es lo que se resta para la utilidad neta (D51)
   porCategoria: Record<CategoriaGasto, string>;
   gastos: Gasto[];
 }
@@ -331,6 +340,14 @@ export const api = {
   },
   crearProducto: (datos: DatosProducto) => pedir<Producto>("POST", "/productos", datos),
   actualizarProducto: (id: number, datos: Partial<DatosProducto>) => pedir<Producto>("PATCH", `/productos/${id}`, datos),
+  // Borra la receta (D63); si el producto tiene ventas, estas siguen en el Historial (conservaVentas).
+  borrarProducto: (id: number) => pedir<{ borrado: number; conservaVentas: boolean }>("DELETE", `/productos/${id}`),
+  // Borra todas las recetas de una categoría (D64); antes hace un respaldo.
+  borrarCategoria: (categoria: string, tipo: TipoProducto) =>
+    pedir<{ categoria: string; borradas: string[]; conservanVentas: string[]; respaldo: string }>(
+      "DELETE",
+      `/productos/categorias/${encodeURIComponent(categoria)}?tipo=${tipo}`,
+    ),
   costo: (id: number) => pedir<CostoProducto>("GET", `/productos/${id}/costo`),
   guardarReceta: (id: number, receta: Receta) => pedir<CostoProducto>("PUT", `/productos/${id}/receta`, receta),
 
@@ -339,43 +356,47 @@ export const api = {
     productoId: number;
     cantidad: string;
     precioUnitario?: string; // sin él se usa el precio acordado con el cliente o el precio de venta
-    fiado: boolean;
     clienteId?: string; // cliente elegido; con precio acordado para el producto, se cobra ese
     clienteNombre?: string; // sin clienteId: se busca por nombre o se crea (minorista)
     celular?: string; // obligatorio para un cliente nuevo o uno que aún no tiene celular
-    sabores?: string[];
     fecha?: string; // AAAA-MM-DD; para cargar una venta de un día anterior
   }) =>
     pedir<VentaCreada>("POST", "/ventas", venta),
-  pendientes: () => pedir<Pendientes>("GET", "/ventas/pendientes"),
-  cobrar: (id: number) => pedir<Venta>("POST", `/ventas/${id}/cobrar`),
   crearPedido: (pedido: {
     lineas: { productoId: number; cantidad: string; precioUnitario?: string }[];
-    fiado: boolean;
     clienteId?: string;
     clienteNombre?: string;
+    clienteTipo?: TipoCliente; // solo si el cliente es nuevo (D53)
     celular?: string;
     fecha?: string;
   }) => pedir<PedidoCreado>("POST", "/ventas/pedido", pedido),
-  cobrarPedido: (pedidoId: string) =>
-    pedir<{ pedidoId: string; cobradas: number; total: string; cliente: string | null }>("POST", `/ventas/pedidos/${pedidoId}/cobrar`),
   anular: (id: number, motivo: string) =>
     pedir<{ venta: Venta; devuelto: { nombre: string }[] }>("POST", `/ventas/${id}/anular`, { motivo }),
 
   // Correcciones desde el Historial (D43).
-  editarVenta: (id: number, datos: { cantidad?: string; precioUnitario?: string; fecha?: string; sabores?: string[] | null }) =>
+  editarVenta: (id: number, datos: { cantidad?: string; precioUnitario?: string; fecha?: string }) =>
     pedir<Venta>("PATCH", `/ventas/${id}`, datos),
   eliminarVenta: (id: number) => pedir<{ eliminada: number }>("DELETE", `/ventas/${id}`),
+  eliminarPedido: (pedidoId: string) => pedir<{ eliminadas: number }>("DELETE", `/ventas/pedidos/${pedidoId}`),
   editarHistorico: (
     id: number,
-    datos: { fecha?: string; cantidad?: string; valor?: string; clienteId?: string | null; sabores?: string | null },
+    datos: { fecha?: string; cantidad?: string; valor?: string },
   ) => pedir<VentaHistorica>("PATCH", `/historico/${id}`, datos),
   eliminarHistorico: (id: number) => pedir<{ eliminada: number }>("DELETE", `/historico/${id}`),
+  eliminarPedidoHistorico: (id: number) => pedir<{ eliminadas: number }>("DELETE", `/historico/${id}/pedido`),
   historico: (desde?: string, hasta?: string) =>
     pedir<Historico>("GET", `/historico${desde && hasta ? `?desde=${desde}&hasta=${hasta}` : ""}`),
 
   gastos: (desde: string, hasta: string) => pedir<ListaGastos>("GET", `/gastos?desde=${desde}&hasta=${hasta}`),
-  crearGasto: (gasto: { descripcion: string; monto: string; categoria: CategoriaGasto }) =>
+  crearGasto: (gasto: {
+    descripcion: string;
+    monto: string;
+    categoria: CategoriaGasto;
+    insumoId?: number;
+    envases?: string;
+    cantidad?: string;
+    actualizarPrecio?: boolean;
+  }) =>
     pedir<Gasto>("POST", "/gastos", gasto),
   borrarGasto: (id: string) => pedir<void>("DELETE", `/gastos/${id}`),
 

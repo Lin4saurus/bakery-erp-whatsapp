@@ -73,8 +73,8 @@ export function Clientes() {
             {abierto ? "Cerrar" : "Editar"}
           </Button>
           {c.tipo === "MAYORISTA" && (
-            <Button tamano="chico" variante="texto" onClick={() => setPreciosDeId(preciosDeId === c.id ? null : c.id)}>
-              {preciosDeId === c.id ? "Ocultar precios" : "Precios"}
+            <Button tamano="chico" variante="texto" onClick={() => setPreciosDeId(c.id)}>
+              Precios
             </Button>
           )}
           <Button tamano="chico" variante="texto" onClick={() => setHistorialDe(c)}>
@@ -119,7 +119,8 @@ export function Clientes() {
   );
 
   return (
-    <>
+    // .clientes achica la pantalla un poco (cajas, textos y números), igual que el Inicio.
+    <div className="clientes">
       <div className="cabecera-pantalla">
         <div>
           <h1>Clientes</h1>
@@ -201,7 +202,7 @@ export function Clientes() {
       {preciosDe && <PreciosCliente cliente={preciosDe} alCambiar={recargar} cerrar={() => setPreciosDeId(null)} />}
 
       {historialDe && <HistorialCliente cliente={historialDe} cerrar={() => setHistorialDe(null)} />}
-    </>
+    </div>
   );
 }
 
@@ -364,12 +365,13 @@ function HistorialCliente({ cliente, cerrar }: { cliente: Cliente; cerrar: () =>
   const filas = [
     ...(ventas.datos?.ventas ?? [])
       .filter((v) => v.clienteId === cliente.id && !v.anulada)
-      .map((v) => ({ clave: `v${v.id}`, fecha: v.fecha, producto: v.producto, cantidad: v.cantidad, total: v.totalVenta, sabores: v.sabores })),
+      .map((v) => ({ clave: `v${v.id}`, pedido: v.pedidoId ?? `v${v.id}`, fecha: v.fecha, producto: v.producto, cantidad: v.cantidad, total: v.totalVenta })),
     ...(historico.datos?.ventas ?? [])
       .filter((v) => v.clienteId === cliente.id)
-      .map((v) => ({ clave: `h${v.id}`, fecha: v.fecha, producto: v.productoNombre, cantidad: v.cantidad, total: v.valor, sabores: v.sabores })),
+      .map((v) => ({ clave: `h${v.id}`, pedido: v.pedidoId ?? `h${v.id}`, fecha: v.fecha, producto: v.productoNombre, cantidad: v.cantidad, total: v.valor })),
   ].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
   const total = filas.reduce((t, f) => t + Number(f.total), 0);
+  const pedidos = new Set(filas.map((f) => f.pedido)).size; // un pedido de varios sabores cuenta una vez (D57)
 
   const cargando = (ventas.cargando && !ventas.datos) || (historico.cargando && !historico.datos);
 
@@ -380,7 +382,7 @@ function HistorialCliente({ cliente, cerrar }: { cliente: Cliente; cerrar: () =>
           Historial de {cliente.nombre} <TipoClienteBadge tipo={cliente.tipo} />
         </>
       }
-      subtitulo={cargando ? "Cargando…" : `${filas.length} pedido(s) · ${bs(total)} en total`}
+      subtitulo={cargando ? "Cargando…" : `${pedidos} pedido(s) · ${bs(total)} en total`}
       cerrar={cerrar}
     >
       {(ventas.cargando && !ventas.datos) || (historico.cargando && !historico.datos) ? (
@@ -396,7 +398,6 @@ function HistorialCliente({ cliente, cerrar }: { cliente: Cliente; cerrar: () =>
                 <th>Producto</th>
                 <th className="num">Cant.</th>
                 <th className="num">Total</th>
-                <th>Sabores</th>
               </tr>
             </thead>
             <tbody>
@@ -406,7 +407,6 @@ function HistorialCliente({ cliente, cerrar }: { cliente: Cliente; cerrar: () =>
                   <td>{f.producto}</td>
                   <td className="num">{cantidad(f.cantidad)}</td>
                   <td className="num">{bs(f.total)}</td>
-                  <td className="secundario">{f.sabores ?? "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -465,14 +465,8 @@ function PreciosCliente({
   };
 
   return (
-    <Panel
-      titulo={`Precios de ${cliente.nombre}`}
-      acciones={
-        <Button tamano="chico" variante="texto" onClick={cerrar}>
-          Cerrar
-        </Button>
-      }
-    >
+    // Ventana emergente, como el resto de detalles del ERP (D56).
+    <Ventana titulo={`Precios de ${cliente.nombre}`} cerrar={cerrar}>
       <div className="panel-cuerpo">
         <p className="secundario clientes__detalle">
           Lo que negoció con la dueña. Los productos que no están aquí se le cobran a su precio de venta.
@@ -540,6 +534,6 @@ function PreciosCliente({
           </Button>
         </form>
       </div>
-    </Panel>
+    </Ventana>
   );
 }

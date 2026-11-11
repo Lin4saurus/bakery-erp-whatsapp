@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { IconType } from "react-icons";
+import { MdChevronLeft, MdChevronRight } from "react-icons/md";
 import "./Sidebar.css";
 
 export interface ItemMenu<K extends string> {
@@ -13,11 +14,15 @@ export function Sidebar<K extends string>({
   items,
   actual,
   abierto,
+  colapsado,
+  alternarColapsado,
   elegir,
   cerrar,
   pie,
 }: {
   pie?: ReactNode;
+  colapsado: boolean; // solo íconos (D62); en pantallas chicas no aplica
+  alternarColapsado: () => void;
   items: readonly ItemMenu<K>[];
   actual: K;
   abierto: boolean;
@@ -27,13 +32,29 @@ export function Sidebar<K extends string>({
   const secciones = [...new Set(items.map((i) => i.seccion))];
   return (
     <>
-      <aside className={`sidebar ${abierto ? "sidebar--abierto" : ""}`}>
-        <div className="sidebar__marca">
+      <aside className={`sidebar ${abierto ? "sidebar--abierto" : ""} ${colapsado ? "sidebar--colapsado" : ""}`}>
+        {/* Toda la marca colapsa o expande el menú (D66); en pantallas chicas el menú se abre con ☰. */}
+        <button
+          type="button"
+          className="sidebar__marca"
+          onClick={() => {
+            if (window.matchMedia("(min-width: 1001px)").matches) alternarColapsado();
+          }}
+          aria-label={colapsado ? "Mostrar el menú completo" : "Dejar solo los íconos"}
+          title={colapsado ? "Mostrar el menú completo" : "Dejar solo los íconos"}
+        >
           <span className="sidebar__logo" aria-hidden>
             D
           </span>
-          <span className="sidebar__nombre">Dulzura</span>
-        </div>
+          {/* Dulzura Pastelería (D65): en dos líneas para que quepa en el menú de 200 px. */}
+          <span className="sidebar__nombre">
+            Dulzura
+            <span className="sidebar__subnombre">Pastelería</span>
+          </span>
+          <span className="sidebar__colapsar" aria-hidden>
+            {colapsado ? <MdChevronRight /> : <MdChevronLeft />}
+          </span>
+        </button>
         <nav className="sidebar__nav" aria-label="Menú principal">
           {secciones.map((seccion) => (
             <div key={seccion} className="sidebar__seccion">
@@ -45,10 +66,12 @@ export function Sidebar<K extends string>({
                     key={clave}
                     className={`sidebar__item ${clave === actual ? "sidebar__item--activo" : ""}`}
                     aria-current={clave === actual ? "page" : undefined}
+                    aria-label={colapsado ? titulo : undefined}
+                    title={colapsado ? titulo : undefined}
                     onClick={() => elegir(clave)}
                   >
                     <Icono className="sidebar__icono" aria-hidden />
-                    {titulo}
+                    <span className="sidebar__texto">{titulo}</span>
                   </button>
                 ))}
             </div>

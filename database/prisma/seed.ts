@@ -41,7 +41,7 @@ const insumos: InsumoSeed[] = [
   { nombre: "Huevo", categoria: MATERIA_PRIMA, unidadBase: UNIDAD, contenidoEnvase: "300", precioEnvase: "200" }, // ING003
   { nombre: "Aceite", categoria: MATERIA_PRIMA, unidadBase: GRAMO, contenidoEnvase: "16500", precioEnvase: "265" }, // ING004 Aceite o margarina
   { nombre: "Leche", categoria: MATERIA_PRIMA, unidadBase: MILILITRO, contenidoEnvase: "1000", precioEnvase: "8" }, // ING005
-  { nombre: "Esencia", categoria: MATERIA_PRIMA, unidadBase: MILILITRO, contenidoEnvase: "1000", precioEnvase: "60" }, // ING006 Esencia de vainilla
+  { nombre: "Esencia de vainilla", categoria: MATERIA_PRIMA, unidadBase: MILILITRO, contenidoEnvase: "1000", precioEnvase: "60" }, // ING006 Esencia de vainilla
   { nombre: "Almendra", categoria: MATERIA_PRIMA, unidadBase: GRAMO, contenidoEnvase: "1000", precioEnvase: "90" }, // ING011 Nueces / almendras
   { nombre: "Etiqueta", categoria: EMPAQUE, unidadBase: UNIDAD, contenidoEnvase: "1", precioEnvase: "0.5" }, // ING012 Empaque/etiqueta
   { nombre: "Polvo de hornear", categoria: MATERIA_PRIMA, unidadBase: GRAMO, contenidoEnvase: "1000", precioEnvase: "32" }, // ING014
@@ -102,7 +102,7 @@ const stockPrueba: Record<string, { actual: string; minimo: string }> = {
   Huevo: { actual: "120", minimo: "30" },
   Aceite: { actual: "8000", minimo: "2000" },
   Leche: { actual: "6000", minimo: "1500" },
-  Esencia: { actual: "200", minimo: "50" },
+  "Esencia de vainilla": { actual: "200", minimo: "50" },
   Almendra: { actual: "1500", minimo: "300" },
   Etiqueta: { actual: "150", minimo: "50" },
   "Polvo de hornear": { actual: "80", minimo: "250" }, // bajo el mínimo
@@ -154,8 +154,9 @@ interface ProductoSeed {
   rendimientoReceta: Prisma.Decimal;
   unidadRendimiento: UnidadMedida;
   precioVenta: Prisma.Decimal | null;
+  unidadesPorVenta?: Prisma.Decimal; // packs (D60); 1 por defecto
   activo: boolean;
-  ingredientes: Cantidades; // nombre de insumo -> cantidad por tanda
+  ingredientes: Cantidades; // nombre de insumo -> cantidad por tanda (empaques incluidos; ver seedProductos)
   subRecetas: Cantidades; // nombre de producto INTERMEDIO -> cantidad por tanda
 }
 
@@ -164,7 +165,7 @@ const masaQueque2409: Cantidades = {
   Aceite: D(140),
   Azúcar: D(180),
   Agua: D(140),
-  Esencia: D(50), // D15
+  "Esencia de vainilla": D(50), // D15
   "Polvo de hornear": D(50), // D14
   Harina: D(260),
   "Leche en polvo": D(20),
@@ -178,7 +179,7 @@ const rendimientoQueque2409 = D("880.4").div(700);
 const rendimientoMoldeGrande = D("2817.28").div(800);
 
 // Brownies (D20): la receta base es un INTERMEDIO medido en gramos; cada brownie pesa 80 g
-// (Excel: 743 g / 80 = 9.2875 brownies por tanda). Los packs se venden por caja (rinde 1).
+// (Excel: 743 g / 80 = 9.2875 brownies por tanda). Los packs rinden sus N brownies y se venden juntos (D60).
 const GRAMOS_POR_BROWNIE = 80;
 const brownies = (unidades: number): Prisma.Decimal => D(GRAMOS_POR_BROWNIE * unidades);
 const masaBrownie: Cantidades = {
@@ -188,7 +189,7 @@ const masaBrownie: Cantidades = {
   Azúcar: D(200),
   Harina: D(65),
   Cocoa: D(25),
-  Esencia: D(20), // "Vainilla" en el Excel
+  "Esencia de vainilla": D(20), // "Vainilla" en el Excel
 };
 const FACTOR_BROWNIES_16 = D("2.45"); // Excel H20
 
@@ -278,7 +279,7 @@ const productos: ProductoSeed[] = [
       Yogurt: D(160),
       Azúcar: D(180),
       Huevo: D(4),
-      Esencia: D(10),
+      "Esencia de vainilla": D(10),
       "Polvo de hornear": D(5),
       "Harina de quinoa": D(250),
       Agua: D(50),
@@ -300,7 +301,7 @@ const productos: ProductoSeed[] = [
       Aceite: D(160),
       Azúcar: D(180),
       Huevo: D(4),
-      Esencia: D(50), // D15
+      "Esencia de vainilla": D(50), // D15
       "Polvo de hornear": D(50), // D14
       Harina: D(250),
       "Leche en polvo": D(20),
@@ -328,7 +329,7 @@ const productos: ProductoSeed[] = [
       Mantequilla: D(150),
       Azúcar: D(750),
       Huevo: D(8), // D6
-      Esencia: D(50),
+      "Esencia de vainilla": D(50),
       "Polvo de hornear": D(50),
       Harina: D(1120),
       Almendra: D(50),
@@ -355,7 +356,8 @@ const productos: ProductoSeed[] = [
     nombre: "Brownies clásicos 4 u",
     categoria: "Brownies",
     tipo: TipoProducto.VENTA,
-    rendimientoReceta: D(1),
+    rendimientoReceta: D(4), // la receta es de 4 brownies…
+    unidadesPorVenta: D(4), // …y se venden juntos en 1 caja con 1 etiqueta (D60)
     unidadRendimiento: UNIDAD,
     precioVenta: D(30),
     activo: true,
@@ -366,7 +368,8 @@ const productos: ProductoSeed[] = [
     nombre: "Brownies premium 4 u",
     categoria: "Brownies",
     tipo: TipoProducto.VENTA,
-    rendimientoReceta: D(1),
+    rendimientoReceta: D(4), // la receta es de 4 brownies…
+    unidadesPorVenta: D(4), // …y se venden juntos en 1 caja con 1 etiqueta (D60)
     unidadRendimiento: UNIDAD,
     precioVenta: D(38),
     activo: true,
@@ -383,7 +386,8 @@ const productos: ProductoSeed[] = [
     nombre: "Brownies clásicos 9 u",
     categoria: "Brownies",
     tipo: TipoProducto.VENTA,
-    rendimientoReceta: D(1),
+    rendimientoReceta: D(9), // la receta es de 9 brownies…
+    unidadesPorVenta: D(9), // …y se venden juntos en 1 caja con 1 etiqueta (D60)
     unidadRendimiento: UNIDAD,
     precioVenta: D(55),
     activo: true,
@@ -395,7 +399,8 @@ const productos: ProductoSeed[] = [
     nombre: "Brownies premium 9 u",
     categoria: "Brownies",
     tipo: TipoProducto.VENTA,
-    rendimientoReceta: D(1),
+    rendimientoReceta: D(9), // la receta es de 9 brownies…
+    unidadesPorVenta: D(9), // …y se venden juntos en 1 caja con 1 etiqueta (D60)
     unidadRendimiento: UNIDAD,
     precioVenta: D(70),
     activo: true,
@@ -458,7 +463,7 @@ const productos: ProductoSeed[] = [
       Azúcar: D(400), // 250 flan + 150 queque
       "Leche condensada": D(395), // 1 lata
       Leche: D(600),
-      Esencia: D(20), // "Vainilla": 10 flan + 10 queque
+      "Esencia de vainilla": D(20), // "Vainilla": 10 flan + 10 queque
       "Queso crema": D(100),
       Harina: D(120),
       Cocoa: D(30),
@@ -483,7 +488,7 @@ const productos: ProductoSeed[] = [
       Azúcar: D(150),
       "Leche condensada": D(395), // 1 lata
       Leche: D(600),
-      Esencia: D(10), // "Vainilla"
+      "Esencia de vainilla": D(10), // "Vainilla"
       "Leche en polvo": D(230),
       Ron: D(10),
       "Dulce de leche": D(200),
@@ -734,6 +739,8 @@ async function seedStockPrueba(tx: Prisma.TransactionClient, insumoIds: Map<stri
   return cargados;
 }
 
+const categoriaDe = (nombre: string) => insumos.find((i) => i.nombre === nombre)?.categoria;
+
 async function seedProductos(tx: Prisma.TransactionClient, insumoIds: Map<string, number>): Promise<void> {
   const productoIds = new Map<string, number>();
 
@@ -745,6 +752,7 @@ async function seedProductos(tx: Prisma.TransactionClient, insumoIds: Map<string
       rendimientoReceta: producto.rendimientoReceta,
       unidadRendimiento: producto.unidadRendimiento,
       precioVenta: producto.precioVenta,
+      unidadesPorVenta: producto.unidadesPorVenta ?? D(1),
       activo: producto.activo,
     };
     const { id } = await tx.producto.upsert({
@@ -758,12 +766,17 @@ async function seedProductos(tx: Prisma.TransactionClient, insumoIds: Map<string
     await tx.ingredienteReceta.deleteMany({ where: { productoId: id } });
     await tx.componenteReceta.deleteMany({ where: { productoId: id } });
 
+    // Las recetas de abajo vienen del Excel, por tanda. Desde D60 «Limpieza y otros» es un gasto (no va en recetas)
+    // y los empaques de un producto de venta van por lo que se vende: tanda → × unidadesPorVenta ÷ rendimiento.
+    const porVenta = (producto.unidadesPorVenta ?? D(1)).div(producto.rendimientoReceta);
     await tx.ingredienteReceta.createMany({
-      data: Object.entries(producto.ingredientes).map(([nombre, cantidad]) => ({
-        productoId: id,
-        insumoId: buscarId(insumoIds, nombre, "Insumo"),
-        cantidad,
-      })),
+      data: Object.entries(producto.ingredientes)
+        .filter(([nombre]) => categoriaDe(nombre) !== GASTO_INDIRECTO)
+        .map(([nombre, cantidad]) => ({
+          productoId: id,
+          insumoId: buscarId(insumoIds, nombre, "Insumo"),
+          cantidad: producto.tipo === TipoProducto.VENTA && categoriaDe(nombre) === EMPAQUE ? cantidad.mul(porVenta) : cantidad,
+        })),
     });
 
     const subRecetas = Object.entries(producto.subRecetas);

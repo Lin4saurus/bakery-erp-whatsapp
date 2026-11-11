@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
-import { EstadoPago, Prisma, TipoCliente, TipoMovimiento, TipoProducto } from "@prisma/client";
+import { Prisma, TipoCliente, TipoMovimiento, TipoProducto } from "@prisma/client";
 import { prisma } from "../prisma";
 import { AppError } from "../errors";
 import { calcularCostoProducto } from "../services/costeo";
@@ -34,11 +34,9 @@ const ventaSchema = z
     productoId: z.number().int().positive(),
     cantidad: decimalPositivo,
     precioUnitario: decimalNoNegativo.optional(), // por defecto, el precio de venta del producto
-    fiado: z.boolean().default(false),
     clienteId: z.string().uuid("Debe ser un id de cliente válido.").optional(),
     clienteNombre: z.string().trim().min(1).max(100).optional(),
     celular: celularSchema.optional(), // obligatorio si el cliente aún no tiene celular
-    sabores: z.array(z.string().trim().min(1).max(40)).max(20).optional(), // ej. ["Coco", "Oreo"]
     fecha: fechaVenta.optional(), // por defecto, ahora
   })
   .superRefine((venta, ctx) => {
@@ -51,13 +49,12 @@ const faltaDato = (campo: string, mensaje: string) => new z.ZodError([{ code: z.
 
 const filtrosSchema = z.object({ desde: fechaDia, hasta: fechaDia });
 
-// Corrección desde el Historial (D43): cantidad, precio, día y sabores.
+// Corrección desde el Historial (D43): cantidad, precio y día.
 const editarSchema = z
   .object({
     cantidad: decimalPositivo.optional(),
     precioUnitario: decimalNoNegativo.optional(),
     fecha: fechaVenta.optional(),
-    sabores: z.array(z.string().trim().min(1).max(40)).max(20).nullable().optional(),
   })
   .refine(alMenosUnCampo, "Envía al menos un campo para corregir.");
 
@@ -68,9 +65,6 @@ const netoPorInsumo = (movimientos: { insumoId: number; cantidad: Prisma.Decimal
   return neto;
 };
 
-// Mayorista: con más de esta cantidad la venta debe decir qué sabores lleva (para planificar la producción).
-export const UNIDADES_SIN_SABORES = 5;
-
 const rangoFechas = (desde?: string, hasta?: string): Prisma.DateTimeFilter => {
   const fecha: Prisma.DateTimeFilter = {};
   if (desde) fecha.gte = new Date(`${desde}T00:00:00`);
@@ -78,12 +72,14 @@ const rangoFechas = (desde?: string, hasta?: string): Prisma.DateTimeFilter => {
   return fecha;
 };
 
-const conCliente = { producto: { select: { nombre: true } }, clienteRegistrado: { select: { id: true, nombre: true, tipo: true } } };
+const conCliente = { producto: { select: { nombre: true, categoria: true } }, clienteRegistrado: { select: { id: true, nombre: true, tipo: true } } };
 
 type VentaConCliente = Prisma.VentaGetPayload<{ include: typeof conCliente }>;
 const plana = ({ producto, clienteRegistrado, ...venta }: VentaConCliente) => ({
   ...venta,
-  producto: producto.nombre,
+  // Cada sabor es su propio producto; solo las ventas partidas por sabor de un producto sin sabor en el nombre lo agregan (D57).
+  producto: venta.sabor ? `${producto.nombre} · ${venta.sabor}` : producto.nombre,
+  familia: producto.categoria, // para agrupar un pedido por familia en el Historial (D55)
   clienteTipo: clienteRegistrado?.tipo ?? null,
 });
 
@@ -102,7 +98,12 @@ const fechaParaGuardar = (fecha?: string) => {
 // Cliente: el elegido, uno con el mismo nombre (sin importar mayúsculas ni tildes) o uno nuevo (D44).
 async function resolverCliente(
   tx: Tx,
-  { clienteId, clienteNombre, celular }: { clienteId?: string; clienteNombre?: string; celular?: string },
+  {
+    clienteId,
+    clienteNombre,
+    celular,
+    clienteTipo,
+  }: { clienteId?: string; clienteNombre?: string; celular?: string; clienteTipo?: TipoCliente },
 ) {
   let ficha = clienteId
     ? await tx.cliente.findUnique({ where: { id: clienteId } })
@@ -111,7 +112,10 @@ async function resolverCliente(
   let clienteNuevo = false;
   if (!ficha) {
     if (!celular) throw faltaDato("celular", "Anota el celular del cliente nuevo.");
-    ficha = await tx.cliente.create({ data: { nombre: (clienteNombre ?? "").replace(/\s+/g, " "), celular } });
+    // Un cliente nuevo es minorista salvo que la Caja diga mayorista (D53).
+    ficha = await tx.cliente.create({
+      data: { nombre: (clienteNombre ?? "").replace(/\s+/g, " "), celular, tipo: clienteTipo ?? TipoCliente.MINORISTA },
+    });
     clienteNuevo = true;
   }
   if (celular && celular !== ficha.celular) ficha = await tx.cliente.update({ where: { id: ficha.id }, data: { celular } });
@@ -121,7 +125,7 @@ async function resolverCliente(
 
 async function productoVendible(tx: Tx, productoId: number): Promise<ProductoVendible> {
   const producto = await tx.producto.findUnique({ where: { id: productoId } });
-  if (!producto) throw new AppError(404, `No existe el producto ${productoId}.`);
+  if (!producto || producto.eliminado) throw new AppError(404, `No existe el producto ${productoId}.`);
   if (producto.tipo !== TipoProducto.VENTA) {
     throw new AppError(422, `"${producto.nombre}" es un producto intermedio y no se vende directamente.`);
   }
@@ -139,13 +143,11 @@ async function registrarLinea(
     ficha: FichaCliente;
     cantidad: Prisma.Decimal;
     precioUnitario?: Prisma.Decimal;
-    fiado: boolean;
-    sabores?: string[];
     fecha?: string;
     pedidoId?: string;
   },
 ) {
-  const { producto, ficha, cantidad, precioUnitario, fiado, sabores, fecha, pedidoId } = datos;
+  const { producto, ficha, cantidad, precioUnitario, fecha, pedidoId } = datos;
   const fechaGuardada = fechaParaGuardar(fecha);
   // Cliente con precio acordado para este producto: se cobra ese y no se cambia a mano (evita errores).
   // Sin precio acordado, se cobra el precio de venta o el que se escriba (regateo).
@@ -173,10 +175,8 @@ async function registrarLinea(
       totalVenta,
       costoTotal,
       gananciaBruta: totalVenta.sub(costoTotal),
-      estadoPago: fiado ? EstadoPago.PENDIENTE : EstadoPago.PAGADO,
       cliente: ficha.nombre,
       clienteId: ficha.id,
-      sabores: sabores?.length ? sabores.join(", ") : null,
       pedidoId: pedidoId ?? null,
       fecha: fechaGuardada,
     },
@@ -205,20 +205,11 @@ async function registrarLinea(
 
 // Registra una venta de un solo producto (API anterior; la Caja usa /pedido).
 ventasRouter.post("/", async (req, res) => {
-  const { productoId, cantidad, precioUnitario, fiado, clienteId, clienteNombre, celular, sabores, fecha } = ventaSchema.parse(req.body);
+  const { productoId, cantidad, precioUnitario, clienteId, clienteNombre, celular, fecha } = ventaSchema.parse(req.body);
   const resultado = await prisma.$transaction(async (tx) => {
     const producto = await productoVendible(tx, productoId);
     const { ficha, clienteNuevo } = await resolverCliente(tx, { clienteId, clienteNombre, celular });
-    if (ficha.tipo === TipoCliente.MAYORISTA && cantidad.gt(UNIDADES_SIN_SABORES) && !sabores?.length) {
-      throw new z.ZodError([
-        {
-          code: z.ZodIssueCode.custom,
-          path: ["sabores"],
-          message: `Para más de ${UNIDADES_SIN_SABORES} unidades a un mayorista, indica los sabores.`,
-        },
-      ]);
-    }
-    const linea = await registrarLinea(tx, { producto, ficha, cantidad, precioUnitario, fiado, sabores, fecha });
+    const linea = await registrarLinea(tx, { producto, ficha, cantidad, precioUnitario, fecha });
     return { ...linea, clienteNuevo };
   });
   res.status(201).json(resultado);
@@ -239,9 +230,9 @@ const pedidoSchema = z
       )
       .min(1, "Agrega al menos un producto al pedido.")
       .max(40, "Máximo 40 productos por pedido."),
-    fiado: z.boolean().default(false),
     clienteId: z.string().uuid("Debe ser un id de cliente válido.").optional(),
     clienteNombre: z.string().trim().min(1).max(100).optional(),
+    clienteTipo: z.nativeEnum(TipoCliente).optional(), // solo cuenta si el cliente es nuevo
     celular: celularSchema.optional(),
     fecha: fechaVenta.optional(),
   })
@@ -256,9 +247,9 @@ const pedidoSchema = z
   });
 
 ventasRouter.post("/pedido", async (req, res) => {
-  const { lineas, fiado, clienteId, clienteNombre, celular, fecha } = pedidoSchema.parse(req.body);
+  const { lineas, clienteId, clienteNombre, clienteTipo, celular, fecha } = pedidoSchema.parse(req.body);
   const resultado = await prisma.$transaction(async (tx) => {
-    const { ficha, clienteNuevo } = await resolverCliente(tx, { clienteId, clienteNombre, celular });
+    const { ficha, clienteNuevo } = await resolverCliente(tx, { clienteId, clienteNombre, celular, clienteTipo });
     const pedidoId = randomUUID();
     const ventas = [];
     const alertas = new Map<number, AlertaStock>();
@@ -269,7 +260,6 @@ ventasRouter.post("/pedido", async (req, res) => {
         ficha,
         cantidad: l.cantidad,
         precioUnitario: l.precioUnitario,
-        fiado,
         fecha,
         pedidoId,
       });
@@ -281,7 +271,6 @@ ventasRouter.post("/pedido", async (req, res) => {
       pedidoId,
       cliente: ficha.nombre,
       clienteNuevo,
-      estadoPago: fiado ? EstadoPago.PENDIENTE : EstadoPago.PAGADO,
       fecha: ventas[0]?.fecha ?? new Date(),
       ventas,
       unidades: ventas.reduce((t, v) => t.add(v.cantidad), cero),
@@ -294,24 +283,7 @@ ventasRouter.post("/pedido", async (req, res) => {
   res.status(201).json(resultado);
 });
 
-// Cobra de una vez todas las líneas fiadas de un pedido.
-ventasRouter.post("/pedidos/:pedidoId/cobrar", async (req, res) => {
-  const pedidoId = z.string().uuid("Debe ser un id de pedido válido.").parse(req.params.pedidoId);
-  const lineas = await prisma.venta.findMany({ where: { pedidoId } });
-  if (lineas.length === 0) throw new AppError(404, `No existe el pedido ${pedidoId}.`);
-  const porCobrar = lineas.filter((v) => !v.anulada && v.estadoPago === EstadoPago.PENDIENTE);
-  if (porCobrar.length === 0) throw new AppError(409, "Ese pedido no tiene nada por cobrar.");
-  await prisma.venta.updateMany({
-    where: { id: { in: porCobrar.map((v) => v.id) } },
-    data: { estadoPago: EstadoPago.PAGADO, fechaPago: new Date() },
-  });
-  res.json({
-    pedidoId,
-    cobradas: porCobrar.length,
-    total: porCobrar.reduce((t, v) => t.add(v.totalVenta), new Prisma.Decimal(0)),
-    cliente: porCobrar[0]?.cliente ?? null,
-  });
-});
+// Sin fiados (D74): toda venta se cobra al momento; no hay «por cobrar» ni «cobrar».
 
 // Lista de ventas con totales. Filtros opcionales por día (hora local), ambos inclusive.
 ventasRouter.get("/", async (req, res) => {
@@ -353,7 +325,7 @@ ventasRouter.get("/reporte-clientes", async (req, res) => {
   const { desde, hasta } = filtrosSchema.parse(req.query);
   const fecha = rangoFechas(desde, hasta);
   const clientes = await prisma.cliente.findMany({ orderBy: { nombre: "asc" } });
-  const [ventas, historicas, ultimas, ultimasHistoricas, lineas] = await Promise.all([
+  const [ventas, historicas, ultimas, ultimasHistoricas, lineas, pedidosHistoricos] = await Promise.all([
     prisma.venta.groupBy({
       by: ["clienteId"],
       where: { fecha, anulada: false, clienteId: { not: null } },
@@ -363,11 +335,12 @@ ventasRouter.get("/reporte-clientes", async (req, res) => {
       by: ["clienteId"],
       where: { fecha, clienteId: { not: null }, eliminada: false },
       _sum: { valor: true, cantidad: true },
-      _count: true,
     }),
     prisma.venta.groupBy({ by: ["clienteId"], where: { anulada: false, clienteId: { not: null } }, _max: { fecha: true } }),
     prisma.ventaHistorica.groupBy({ by: ["clienteId"], where: { clienteId: { not: null }, eliminada: false }, _max: { fecha: true } }),
     prisma.venta.findMany({ where: { fecha, anulada: false, clienteId: { not: null } }, select: { id: true, clienteId: true, pedidoId: true } }),
+    // Una nota de varios sabores son varias líneas (D57): el pedido se cuenta por su primera línea.
+    prisma.ventaHistorica.groupBy({ by: ["clienteId"], where: { fecha, clienteId: { not: null }, eliminada: false, linea: 0 }, _count: true }),
   ]);
   // Un pedido de varios productos cuenta como un pedido (D48); las ventas sueltas anteriores, una cada una.
   const pedidosPorCliente = new Map<string, Set<string>>();
@@ -391,40 +364,12 @@ ventasRouter.get("/reporte-clientes", async (req, res) => {
       activo: c.activo,
       totalVendido: (v?._sum.totalVenta ?? cero).add(h?._sum.valor ?? cero),
       unidades: (v?._sum.cantidad ?? cero).add(h?._sum.cantidad ?? cero),
-      ventas: (pedidosPorCliente.get(c.id)?.size ?? 0) + (h?._count ?? 0),
+      ventas: (pedidosPorCliente.get(c.id)?.size ?? 0) + (pedidosHistoricos.find((x) => x.clienteId === c.id)?._count ?? 0),
       ultimoPedido: fechas[0] ?? null,
     };
   });
   reporte.sort((a, b) => b.totalVendido.comparedTo(a.totalVendido) || a.nombre.localeCompare(b.nombre));
   res.json(reporte);
-});
-
-// Fiados sin cobrar (de cualquier fecha), del más antiguo al más nuevo, con el total por cobrar.
-ventasRouter.get("/pendientes", async (_req, res) => {
-  const ventas = await prisma.venta.findMany({
-    where: { estadoPago: EstadoPago.PENDIENTE, anulada: false },
-    include: conCliente,
-    orderBy: { fecha: "asc" },
-  });
-  const total = ventas.reduce((suma, v) => suma.add(v.totalVenta), new Prisma.Decimal(0));
-  res.json({ total, ventas: ventas.map(plana) });
-});
-
-// Marca un fiado como cobrado. La venta y su ganancia ya se contaron el día que se entregó.
-ventasRouter.post("/:id/cobrar", async (req, res) => {
-  const id = parseId(req.params.id);
-  const venta = await prisma.venta.findUnique({ where: { id }, include: { producto: { select: { nombre: true } } } });
-  if (!venta) throw new AppError(404, `No existe la venta ${id}.`);
-  if (venta.anulada) throw new AppError(409, `La venta ${id} está anulada; no hay nada que cobrar.`);
-  if (venta.estadoPago === EstadoPago.PAGADO) {
-    throw new AppError(409, `La venta ${id} ya estaba cobrada.`);
-  }
-  const { producto, ...cobrada } = await prisma.venta.update({
-    where: { id },
-    data: { estadoPago: EstadoPago.PAGADO, fechaPago: new Date() },
-    include: { producto: { select: { nombre: true } } },
-  });
-  res.json({ ...cobrada, producto: producto.nombre });
 });
 
 const anularSchema = z.object({
@@ -517,16 +462,6 @@ ventasRouter.patch("/:id", async (req, res) => {
       );
     }
     const precio = datos.precioUnitario ?? venta.precioUnitario;
-    const sabores = datos.sabores === undefined ? venta.sabores : datos.sabores?.length ? datos.sabores.join(", ") : null;
-    if (venta.clienteRegistrado?.tipo === TipoCliente.MAYORISTA && cantidad.gt(UNIDADES_SIN_SABORES) && !sabores) {
-      throw new z.ZodError([
-        {
-          code: z.ZodIssueCode.custom,
-          path: ["sabores"],
-          message: `Para más de ${UNIDADES_SIN_SABORES} unidades a un mayorista, indica los sabores.`,
-        },
-      ]);
-    }
     let fecha = venta.fecha;
     if (datos.fecha) {
       const hoy = new Date().toLocaleDateString("sv-SE");
@@ -559,7 +494,7 @@ ventasRouter.patch("/:id", async (req, res) => {
     const costoTotal = venta.costoUnitario.mul(cantidad);
     return tx.venta.update({
       where: { id },
-      data: { cantidad, precioUnitario: precio, totalVenta, costoTotal, gananciaBruta: totalVenta.sub(costoTotal), sabores, fecha },
+      data: { cantidad, precioUnitario: precio, totalVenta, costoTotal, gananciaBruta: totalVenta.sub(costoTotal), fecha },
       include: conCliente,
     });
   });
@@ -569,25 +504,39 @@ ventasRouter.patch("/:id", async (req, res) => {
 
 // Elimina una venta (pedido cancelado o cargado por error, D43). Si no estaba anulada, primero devuelve
 // al stock lo descontado. Los movimientos quedan en la bitácora del inventario, sin la venta.
+async function eliminarVenta(tx: Tx, id: number) {
+  const venta = await tx.venta.findUnique({ where: { id }, include: { movimientos: true, producto: { select: { nombre: true } } } });
+  if (!venta) throw new AppError(404, `No existe la venta ${id}.`);
+  if (!venta.anulada) {
+    for (const [insumoId, neto] of netoPorInsumo(venta.movimientos)) {
+      if (neto.isZero()) continue;
+      await registrarMovimiento(tx, {
+        insumoId,
+        tipo: TipoMovimiento.ANULACION,
+        cantidad: neto.neg(),
+        nota: `Venta ${id} eliminada (${venta.producto.nombre} × ${venta.cantidad.toString()})`,
+      });
+    }
+  }
+  await tx.movimientoInventario.updateMany({ where: { ventaId: id }, data: { ventaId: null } });
+  await tx.venta.delete({ where: { id } });
+}
+
+// Elimina un pedido entero (todas sus líneas) en una sola transacción, devolviendo el stock (D54).
+ventasRouter.delete("/pedidos/:pedidoId", async (req, res) => {
+  const pedidoId = z.string().uuid("Debe ser un id de pedido válido.").parse(req.params.pedidoId);
+  const eliminadas = await prisma.$transaction(async (tx) => {
+    const lineas = await tx.venta.findMany({ where: { pedidoId }, select: { id: true } });
+    if (lineas.length === 0) throw new AppError(404, `No existe el pedido ${pedidoId}.`);
+    for (const l of lineas) await eliminarVenta(tx, l.id);
+    return lineas.length;
+  });
+  res.json({ pedidoId, eliminadas });
+});
+
 ventasRouter.delete("/:id", async (req, res) => {
   const id = parseId(req.params.id);
-  await prisma.$transaction(async (tx) => {
-    const venta = await tx.venta.findUnique({ where: { id }, include: { movimientos: true, producto: { select: { nombre: true } } } });
-    if (!venta) throw new AppError(404, `No existe la venta ${id}.`);
-    if (!venta.anulada) {
-      for (const [insumoId, neto] of netoPorInsumo(venta.movimientos)) {
-        if (neto.isZero()) continue;
-        await registrarMovimiento(tx, {
-          insumoId,
-          tipo: TipoMovimiento.ANULACION,
-          cantidad: neto.neg(),
-          nota: `Venta ${id} eliminada (${venta.producto.nombre} × ${venta.cantidad.toString()})`,
-        });
-      }
-    }
-    await tx.movimientoInventario.updateMany({ where: { ventaId: id }, data: { ventaId: null } });
-    await tx.venta.delete({ where: { id } });
-  });
+  await prisma.$transaction((tx) => eliminarVenta(tx, id));
   res.json({ eliminada: id });
 });
 
