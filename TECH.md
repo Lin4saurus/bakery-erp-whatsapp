@@ -196,3 +196,41 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 
 
 **Sin fiados (D74)**: toda venta se cobra al momento. No hay `estadoPago`, `fechaPago`, `/ventas/pendientes` ni rutas de cobro; un `fiado` enviado se ignora.
+
+## Agente de WhatsApp en n8n (D78)
+- n8n, Evolution API y Postgres corren en Docker (`D:\PROYECTOS\n8n-host`). n8n: http://localhost:5678 · Evolution: http://localhost:8080.
+- Desde los contenedores el ERP está en `http://host.docker.internal:3000` (el servidor escucha en todas las interfaces). Si el ERP está apagado, el bot avisa al cliente que la repostera le responderá.
+- Workflow `ERP Dulzura - Agente de pedidos (WhatsApp)`: Webhook `dulzura-pedidos` → Normalizar (solo chats privados, sin mensajes propios ni stickers; `@lid` usa `senderPn`) → descarta `message_id` repetidos → GET `/api/clientes` y `/api/productos?tipo=VENTA&activo=true` → AI Agent (Gemini + memoria Postgres por número, tabla `dulzura_chat_memoria`) con la herramienta `registrar_pedido` (POST `/api/ventas/pedido`; `clienteId` si el número es conocido, si no `clienteNombre`; `celular` siempre del número de WhatsApp) → responde con Evolution `sendText`.
+- La herramienta solo devuelve al modelo `pedidoId, cliente, clienteNuevo, totalVenta, unidades, error` (sin costos ni ganancias).
+- Pruebas sin tocar datos reales: copiar `dulzura.db` a `database/prisma/prueba-agente.db`, levantar la configuración `erp-prueba` (puerto 3002, `.claude/launch.json`) y apuntar temporalmente `registrar_pedido` a `:3002`. Borrar la copia al terminar.
+
+## Pedidos por entregar (D81)
+| Método | Ruta | Qué hace |
+|---|---|---|
+| GET | `/api/pedidos?vista=proximos\|historial` | Próximos: sin terminar, por fecha y hora. Historial: entregados y cancelados (últimos 100). |
+| GET | `/api/pedidos/:id` | Un pedido con cliente y líneas. |
+| POST | `/api/pedidos` | `{ lineas[{productoId,cantidad}], clienteId \| clienteNombre+celular, clienteTipo?, fechaEntrega AAAA-MM-DD (hoy o después), horaEntrega? HH:MM, nota?, origen? MANUAL\|WHATSAPP }`. Precio por línea: acordado o precio de venta. |
+| PATCH | `/api/pedidos/:id` | Día, hora, nota o líneas, mientras no esté entregado ni cancelado (409). |
+| POST | `/api/pedidos/:id/estado` | `{ estado, motivo? }`. Avanza (puede saltar pasos), vuelve uno atrás (si no, 422) o cancela. ENTREGADO llama a `registrarPedidoVenta` (la misma función de `POST /api/ventas/pedido`) y guarda `ventaPedidoId`. |
+| DELETE | `/api/pedidos/:id` | Borra uno anotado por error; uno ENTREGADO responde 409 (ya es venta). |
+
+- Las fechas de entrega se guardan como texto `AAAA-MM-DD` y `HH:MM` (hora local) para evitar corrimientos de zona horaria.
+- Frontend: `pantallas/Pedidos.tsx`, ayudas compartidas en `src/pedidos.ts` (nombres de estado, siguiente paso, «Hoy/Mañana/Ayer», urgentes, para preparar). El menú revisa los pedidos cada minuto para la insignia.
+- Datos demo: `database/prisma/demo-pedidos.ts` usa clientes y productos existentes y marca `esDemo`; al borrarlos, si alguno se entregó, borra su venta con `eliminarVenta` (devuelve el stock).
+- Agente n8n: la herramienta `registrar_pedido` hace `POST /api/pedidos` con `origen: WHATSAPP`, `fecha_entrega`, `hora_entrega`, `entrega`, `ubicacion` y `nota` sacados de la conversación.
+
+## Recojo/delivery y atención humana (D85)
+- `Pedido.entrega` RECOJO|DELIVERY, `ubicacion` (enlace de Maps o dirección) y `costoEnvio` (Bs, lo paga el cliente; **no** suma a `total` ni a la venta). Se aceptan en `POST` y `PATCH /api/pedidos`.
+- `POST /api/pedidos?confirmado=no` responde 409 sin escribir: n8n lo agrega cuando el último mensaje del cliente no es un «sí».
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| GET | `/api/atenciones?estado=PENDIENTE\|RESUELTA\|TODAS` | Pendientes (las más viejas primero; sin las pausas «respondiste tú» vencidas) o resueltas (últimas 100). |
+| GET | `/api/atenciones/pausa?celular=` | `{ pausado, motivos }`: si hay una pendiente para ese celular (compara los últimos 8 dígitos), el agente no contesta. |
+| POST | `/api/atenciones` | `{ celular, nombre?, motivo COTIZAR_DELIVERY\|PEDIDO_PERSONALIZADO\|RECLAMO\|DUENA_RESPONDIO\|OTRO, descripcion, pedidoNumero? }`. Una pendiente del mismo motivo en ese chat se actualiza (200) en vez de repetirse (201). |
+| POST | `/api/atenciones/:id/resolver` | Resuelve todas las pendientes de ese celular: el agente vuelve a atender el chat. |
+
+- `DUENA_RESPONDIO` vence sola a las 6 h (`PAUSA_DUENA_HORAS`) sin que la dueña vuelva a escribir.
+- Frontend: `pantallas/Atenciones.tsx` (clave de menú `atencion`); la insignia cuenta chats esperando y se refresca con el evento `dulzura:avisos`.
+- n8n (después de descartar repetidos): mensaje de la dueña (`fromMe` con `source` android/ios/web) → `POST /api/atenciones` DUENA_RESPONDIO y se anota en la memoria como «(La repostera escribió) …»; lo que manda el bot por la API llega con `source: unknown` y se ignora. Cliente → `GET /pausa` → si no está en pausa, se guarda en `dulzura_mensajes_pendientes` (Postgres «ventas»), espera 12 s y solo la ejecución del último mensaje sigue con todos los textos juntos. Primer contacto corto → bienvenida fija; «menú» → lista con precios; ambos sin IA y guardados en la memoria. Ubicación compartida → `📍 Ubicación: https://maps.google.com/?q=lat,lng`. Herramienta `pedir_atencion` → `POST /api/atenciones`.
+- Pruebas: además de `registrar_pedido`, apuntar a `:3002` `Leer clientes`, `Leer catálogo`, `pedir_atencion`, `Pausar chat` y `¿Chat en pausa?`.

@@ -18,22 +18,20 @@ enum UnidadMedida {
 }
 
 enum CategoriaInsumo {
-  MATERIA_PRIMA   // harina, azúcar, mantequilla...
-  EMPAQUE         // platillos, etiquetas, envases, cajas, film: van una vez por lo que se vende, no se dividen (D60)
+  MATERIA_PRIMA // harina, azúcar, mantequilla...
+  EMPAQUE // platillos, etiquetas, envases, cajas, film: van una vez por lo que se vende, no se dividen (D60)
   GASTO_INDIRECTO // limpieza y otros: es un gasto, no entra en las recetas (D60)
 }
 
 enum TipoProducto {
-  VENTA      // se vende en caja (ej. Queque)
+  VENTA // se vende en caja (ej. Queque)
   INTERMEDIO // sub-receta que solo se usa dentro de otras (ej. Relleno de Nido)
 }
-
-
 
 enum TipoMovimiento {
   COMPRA // entrada de insumo comprado (+)
   AJUSTE // corrección manual: conteo físico, merma, vencimiento (+ o −)
-  VENTA  // salida automática al registrar una venta (−)
+  VENTA // salida automática al registrar una venta (−)
   ANULACION // devolución al anular una venta (+)
 }
 
@@ -75,12 +73,13 @@ model Producto {
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
-  ingredientes IngredienteReceta[]
-  subRecetas   ComponenteReceta[]  @relation("ProductoPadre")
-  usadoEn      ComponenteReceta[]  @relation("SubReceta")
-  ventas       Venta[]
+  ingredientes     IngredienteReceta[]
+  subRecetas       ComponenteReceta[]  @relation("ProductoPadre")
+  usadoEn          ComponenteReceta[]  @relation("SubReceta")
+  ventas           Venta[]
   ventasHistoricas VentaHistorica[]
   preciosCliente   PrecioCliente[]
+  lineasPedido     PedidoLinea[]
 }
 
 // Receta (BOM): cantidad de cada insumo para UNA tanda del producto. Los EMPAQUE de un producto de venta van
@@ -116,22 +115,22 @@ model ComponenteReceta {
 // Los costos se guardan como "foto" al momento de vender, para que cambios
 // futuros de precios de insumos no alteren la ganancia histórica.
 model Venta {
-  id             Int        @id @default(autoincrement())
-  productoId     Int
-  cantidad       Decimal // unidades vendidas
-  precioUnitario Decimal // Bs cobrados por unidad
-  costoUnitario  Decimal // Bs, costo real por unidad (receta / rendimiento)
-  totalVenta     Decimal // precioUnitario * cantidad
-  costoTotal     Decimal // costoUnitario * cantidad
-  gananciaBruta  Decimal // totalVenta - costoTotal
-  cliente        String? // nombre del cliente (con clienteId se copia el de su ficha); toda venta se cobra al momento (D74)
-  clienteId      String? // cliente registrado (mayorista o minorista con ficha)
-  sabor          String? // sabor de una línea cuyo producto no lo dice en el nombre (ej. Queque con relleno · Coco) (D57)
-  pedidoId       String? // las líneas de un mismo pedido de la Caja comparten este id (D48); null = venta suelta anterior
+  id              Int       @id @default(autoincrement())
+  productoId      Int
+  cantidad        Decimal // unidades vendidas
+  precioUnitario  Decimal // Bs cobrados por unidad
+  costoUnitario   Decimal // Bs, costo real por unidad (receta / rendimiento)
+  totalVenta      Decimal // precioUnitario * cantidad
+  costoTotal      Decimal // costoUnitario * cantidad
+  gananciaBruta   Decimal // totalVenta - costoTotal
+  cliente         String? // nombre del cliente (con clienteId se copia el de su ficha); toda venta se cobra al momento (D74)
+  clienteId       String? // cliente registrado (mayorista o minorista con ficha)
+  sabor           String? // sabor de una línea cuyo producto no lo dice en el nombre (ej. Queque con relleno · Coco) (D57)
+  pedidoId        String? // las líneas de un mismo pedido de la Caja comparten este id (D48); null = venta suelta anterior
   anulada         Boolean   @default(false) // no cuenta en totales; su stock se devolvió
   fechaAnulacion  DateTime?
   motivoAnulacion String?
-  fecha          DateTime   @default(now())
+  fecha           DateTime  @default(now())
 
   producto          Producto               @relation(fields: [productoId], references: [id], onDelete: Restrict)
   clienteRegistrado Cliente?               @relation(fields: [clienteId], references: [id], onDelete: SetNull)
@@ -154,8 +153,8 @@ model MovimientoInventario {
   nota            String?
   fecha           DateTime       @default(now())
 
-  insumo Insumo @relation(fields: [insumoId], references: [id], onDelete: Restrict)
-  venta  Venta? @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+  insumo Insumo          @relation(fields: [insumoId], references: [id], onDelete: Restrict)
+  venta  Venta?          @relation(fields: [ventaId], references: [id], onDelete: Restrict)
   gasto  GastoOperativo? // si la compra se cargó en Gastos (D51)
 
   @@index([insumoId, fecha])
@@ -165,25 +164,25 @@ model MovimientoInventario {
 // Ventas anteriores al sistema, importadas del Excel (CONTEXT.md D24). Solo para consulta:
 // no descuentan inventario ni cuentan en la Caja ni en el dashboard del día.
 model VentaHistorica {
-  id               Int        @id @default(autoincrement())
+  id               Int      @id @default(autoincrement())
   hoja             String // hoja del Excel de origen
   fila             Int // fila en esa hoja; con la hoja identifica la venta (reimportar no duplica)
   fecha            DateTime // día de la venta (mediodía, hora local)
-  fechaEstimada    Boolean    @default(false) // la hoja solo decía el día de la semana
+  fechaEstimada    Boolean  @default(false) // la hoja solo decía el día de la semana
   productoOriginal String // tal como se escribió en el Excel
   productoNombre   String // agrupado, sin errores de tipeo
   productoId       Int? // producto del ERP, si existe
   cantidad         Decimal
   valor            Decimal // Bs cobrados por toda la fila
-  comision         Decimal    @default(0) // comisión de PedidosYa de esa época (D9: ya no se usa)
+  comision         Decimal  @default(0) // comisión de PedidosYa de esa época (D9: ya no se usa)
   costo            Decimal? // tal como figura en el Excel; null si no se conoce (notas de 2026)
   utilidad         Decimal? // tal como figura en el Excel; null si no se conoce
   cliente          String? // solo el nombre; sin correo ni celular
   clienteId        String? // cliente registrado, si se identificó
-  linea            Int        @default(0) // un pedido de varios sabores es una línea por sabor, misma hoja + fila (D57)
+  linea            Int      @default(0) // un pedido de varios sabores es una línea por sabor, misma hoja + fila (D57)
   // Correcciones de la dueña desde el Historial (D43): reimportar el Excel/notas no las pisa.
-  editada          Boolean    @default(false)
-  eliminada        Boolean    @default(false) // no se muestra ni suma; queda para que reimportar no la reviva
+  editada          Boolean  @default(false)
+  eliminada        Boolean  @default(false) // no se muestra ni suma; queda para que reimportar no la reviva
 
   producto          Producto? @relation(fields: [productoId], references: [id], onDelete: SetNull)
   clienteRegistrado Cliente?  @relation(fields: [clienteId], references: [id], onDelete: SetNull)
@@ -195,7 +194,7 @@ model VentaHistorica {
 }
 
 enum CategoriaGasto {
-  LIMPIEZA     // esponjas, lavavajillas…
+  LIMPIEZA // esponjas, lavavajillas…
   EQUIPAMIENTO // moldes, toppers…
   USO_PERSONAL // lo que la dueña gasta en sí misma con plata del negocio
   INSUMOS // compra de un insumo de receta: suma al stock y no se resta otra vez en la utilidad (D51)
@@ -205,16 +204,16 @@ enum CategoriaGasto {
 // Gastos operativos puntuales que no son insumos de receta. Se restan de la ganancia bruta
 // para la utilidad neta. Los servicios básicos (luz, gas, agua) no se cargan: se comparten con la familia.
 model GastoOperativo {
-  id          String         @id @default(uuid())
-  fecha       DateTime       @default(now())
-  descripcion String
-  monto       Decimal // Bs
-  categoria   CategoriaGasto
-  createdAt   DateTime       @default(now())
+  id           String         @id @default(uuid())
+  fecha        DateTime       @default(now())
+  descripcion  String
+  monto        Decimal // Bs
+  categoria    CategoriaGasto
+  createdAt    DateTime       @default(now())
   // Solo en INSUMOS: qué insumo se compró, cuánto (en su unidad base) y el movimiento de stock que generó.
   insumoId     Int?
   cantidad     Decimal?
-  movimientoId Int?     @unique
+  movimientoId Int?           @unique
 
   insumo     Insumo?               @relation(fields: [insumoId], references: [id], onDelete: Restrict)
   movimiento MovimientoInventario? @relation(fields: [movimientoId], references: [id], onDelete: SetNull)
@@ -232,19 +231,21 @@ enum TipoCliente {
 
 // Clientes recurrentes. No se borran: se desactivan (activo = false) para conservar su historial.
 model Cliente {
-  id             String      @id @default(uuid())
-  nombre         String      @unique
-  tipo           TipoCliente @default(MINORISTA)
-  celular        String?
-  email          String?
-  direccion      String?
-  activo         Boolean     @default(true)
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  id        String      @id @default(uuid())
+  nombre    String      @unique
+  tipo      TipoCliente @default(MINORISTA)
+  celular   String?
+  email     String?
+  direccion String?
+  activo    Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   precios          PrecioCliente[] // precio negociado con este cliente, por producto (D42)
   ventas           Venta[]
   ventasHistoricas VentaHistorica[]
+  pedidos          Pedido[] // pedidos por entregar (D81)
+  atenciones       Atencion[] // chats que pidieron a la dueña (D85)
 }
 
 // Precio acordado con un cliente para un producto (cada mayorista negocia el suyo, D42).
@@ -263,3 +264,105 @@ model PrecioCliente {
   @@index([productoId])
 }
 
+// ---------- Pedidos por entregar (D81) ----------
+// Un pedido es un encargo para un día: no es venta ni descuenta stock hasta que se entrega.
+// Al marcarlo ENTREGADO se registra la venta (como en la Caja) y queda enlazada con ventaPedidoId.
+
+enum EstadoPedido {
+  PENDIENTE // anotado, todavía no se empezó
+  EN_PREPARACION // en el horno / armándose
+  LISTO // terminado, esperando que lo recojan o se lleve
+  ENTREGADO // entregado y cobrado: ya es venta
+  CANCELADO
+}
+
+enum OrigenPedido {
+  MANUAL // lo anotó la repostera
+  WHATSAPP // lo tomó el agente de WhatsApp (D78)
+}
+
+// Cómo llega el pedido al cliente (D85).
+enum TipoEntrega {
+  RECOJO // lo recoge en el local
+  DELIVERY // se envía (Yango u otro); el envío lo cotiza la dueña
+}
+
+model Pedido {
+  id                String       @id @default(uuid())
+  numero            Int          @unique // número corto para hablar del pedido («pedido 12»)
+  clienteId         String
+  fechaEntrega      String // día de entrega AAAA-MM-DD (hora local)
+  horaEntrega       String? // HH:MM, opcional
+  estado            EstadoPedido @default(PENDIENTE)
+  origen            OrigenPedido @default(MANUAL)
+  nota              String? // «sin nueces», «con dedicatoria», dirección…
+  entrega           TipoEntrega  @default(RECOJO) // recojo en el local o delivery (D85)
+  ubicacion         String? // enlace de Google Maps o dirección, si es delivery
+  costoEnvio        Decimal? // Bs del delivery cotizado por la dueña (lo paga el cliente, no es venta)
+  total             Decimal // Bs según los precios al anotar el pedido
+  esDemo            Boolean      @default(false) // datos de demostración (npm run demo:pedidos)
+  ventaPedidoId     String? // Venta.pedidoId creado al entregar
+  entregadoEn       DateTime?
+  canceladoEn       DateTime?
+  motivoCancelacion String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  cliente    Cliente       @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  lineas     PedidoLinea[]
+  atenciones Atencion[]
+
+  @@index([estado, fechaEntrega])
+  @@index([clienteId])
+}
+
+model PedidoLinea {
+  id             Int     @id @default(autoincrement())
+  pedidoId       String
+  productoId     Int
+  cantidad       Decimal
+  precioUnitario Decimal // Bs por unidad al anotar (el acordado con el cliente o el de venta)
+
+  pedido   Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  producto Producto @relation(fields: [productoId], references: [id], onDelete: Restrict)
+
+  @@unique([pedidoId, productoId])
+  @@index([productoId])
+}
+
+// ---------- Atención humana (D85) ----------
+// El agente de WhatsApp pide a la dueña cuando algo le toca a ella (cotizar el delivery, un pastel
+// personalizado, un reclamo). Mientras haya una atención pendiente en ese celular, el agente no contesta.
+
+enum MotivoAtencion {
+  COTIZAR_DELIVERY // «¿cuánto sale en Yango?»
+  PEDIDO_PERSONALIZADO // diseño, tamaño o producto que no está en la lista
+  RECLAMO
+  DUENA_RESPONDIO // la dueña escribió desde el WhatsApp del negocio: el agente se calla
+  OTRO
+}
+
+enum EstadoAtencion {
+  PENDIENTE
+  RESUELTA
+}
+
+model Atencion {
+  id          String         @id @default(uuid())
+  celular     String // número de WhatsApp del cliente (solo dígitos)
+  nombre      String? // como se presentó en el chat
+  clienteId   String?
+  pedidoId    String?
+  motivo      MotivoAtencion
+  descripcion String // breve: qué tiene que hacer la dueña
+  estado      EstadoAtencion @default(PENDIENTE)
+  resueltaEn  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  cliente Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  pedido  Pedido?  @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
+
+  @@index([estado, createdAt])
+  @@index([celular, estado])
+}

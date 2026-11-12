@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import {
   MdOutlineDashboard,
+  MdOutlineSupportAgent,
+  MdOutlineEventNote,
   MdOutlineHistory,
   MdOutlineInsights,
   MdOutlineInventory2,
@@ -20,11 +22,17 @@ import { Recetas } from "./pantallas/Recetas";
 import { Desempeno, Historial } from "./pantallas/Historial";
 import { Gastos } from "./pantallas/Gastos";
 import { Clientes } from "./pantallas/Clientes";
+import { Pedidos } from "./pantallas/Pedidos";
+import { Atenciones } from "./pantallas/Atenciones";
+import { api } from "./api";
+import { urgentes } from "./pedidos";
 import "./App.css";
 
 const pantallas = {
   inicio: Inicio,
   caja: Caja,
+  pedidos: Pedidos,
+  atencion: Atenciones,
   gastos: Gastos,
   clientes: Clientes,
   recetas: Recetas,
@@ -38,6 +46,10 @@ type Pantalla = keyof typeof pantallas;
 const menu: readonly ItemMenu<Pantalla>[] = [
   { clave: "inicio", titulo: "Inicio", icono: MdOutlineDashboard, seccion: "General" },
   { clave: "caja", titulo: "Caja", icono: MdOutlinePointOfSale, seccion: "General" },
+  // Pedidos por entregar (D81): la insignia cuenta los atrasados y los de hoy.
+  { clave: "pedidos", titulo: "Pedidos", icono: MdOutlineEventNote, seccion: "General" },
+  // Atención humana (D85): chats de WhatsApp que el agente pasó a la dueña.
+  { clave: "atencion", titulo: "Atención", icono: MdOutlineSupportAgent, seccion: "General" },
   { clave: "gastos", titulo: "Gastos", icono: MdOutlineReceiptLong, seccion: "General" },
   { clave: "clientes", titulo: "Clientes", icono: MdOutlinePeopleAlt, seccion: "General" },
   { clave: "recetas", titulo: "Recetas y precios", icono: MdOutlineMenuBook, seccion: "Configuración" },
@@ -74,6 +86,31 @@ export function App() {
       return !actual;
     });
   const { tema, alternar } = useTema();
+  // Recordatorio en el menú: pedidos atrasados y de hoy. Se revisa cada minuto y al cambiar de pantalla.
+  // También los chats que esperan a la dueña (D85).
+  const [porAtender, setPorAtender] = useState(0);
+  const [chatsEsperando, setChatsEsperando] = useState(0);
+  useEffect(() => {
+    const revisar = () => {
+      api
+        .pedidos("proximos")
+        .then((lista) => setPorAtender(urgentes(lista).total))
+        .catch(() => undefined);
+      api
+        .atenciones("PENDIENTE")
+        .then((lista) => setChatsEsperando(new Set(lista.map((a) => a.celular.slice(-8))).size))
+        .catch(() => undefined);
+    };
+    revisar();
+    const reloj = window.setInterval(revisar, 60_000);
+    window.addEventListener("hashchange", revisar);
+    window.addEventListener("dulzura:avisos", revisar); // una pantalla resolvió algo
+    return () => {
+      window.clearInterval(reloj);
+      window.removeEventListener("hashchange", revisar);
+      window.removeEventListener("dulzura:avisos", revisar);
+    };
+  }, []);
 
   // El hash permite volver con "atrás" y recargar sin perder la pantalla.
   useEffect(() => {
@@ -94,6 +131,7 @@ export function App() {
     <div className={`app ${colapsado ? "app--colapsado" : ""}`}>
       <Sidebar
         items={menu}
+        insignias={{ pedidos: porAtender, atencion: chatsEsperando }}
         actual={actual}
         abierto={menuAbierto}
         colapsado={colapsado}

@@ -15,6 +15,8 @@
     "db:check": "tsx database/prisma/check-seed.ts",
     "db:historico": "tsx database/prisma/importar-historico.ts",
     "backup": "tsx backend/src/backup.ts",
+    "demo:pedidos": "tsx database/prisma/demo-pedidos.ts",
+    "demo:pedidos:borrar": "tsx database/prisma/demo-pedidos.ts --borrar",
     "dev": "tsx watch backend/src/server.ts",
     "start": "tsx backend/src/server.ts",
     "test": "tsx --test backend/test/api.test.ts",

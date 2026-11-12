@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState, type FormEvent } from "react";
-import { MdDeleteOutline, MdOutlineEdit } from "react-icons/md";
+import { MdChevronLeft, MdChevronRight, MdDeleteOutline, MdOutlineEdit } from "react-icons/md";
 import { api, mensajeDeError, type TipoCliente } from "../api";
 import { BarChart, type Barra } from "../components/charts/BarChart";
 import { bs, cantidad, esNumeroValido, fechaCorta, hora, hoyISO, nombreCorto, normalizarNumero } from "../formato";
@@ -13,8 +13,23 @@ const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "o
 const DIAS = ["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sá"];
 const isoLocal = (fecha: Date): string => fecha.toLocaleDateString("sv-SE");
 
-// Lo que muestra «Por producto» en Desempeño (D68): un día de la semana, un mes o todo el año (null).
-type Seleccion = { tipo: "dia"; dia: string } | { tipo: "mes"; mes: number } | null;
+// Semanas (lunes a domingo) que tocan un mes: la 1 es la que tiene el día 1 (D82).
+function semanasDelMes(anio: number, mes: number): Date[][] {
+  const lunes = new Date(anio, mes, 1, 12);
+  lunes.setDate(lunes.getDate() - ((lunes.getDay() + 6) % 7)); // lunes anterior o igual al día 1
+  const semanas: Date[][] = [];
+  while (lunes.getFullYear() * 12 + lunes.getMonth() <= anio * 12 + mes) {
+    semanas.push(
+      Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(lunes);
+        d.setDate(d.getDate() + i);
+        return d;
+      }),
+    );
+    lunes.setDate(lunes.getDate() + 7);
+  }
+  return semanas;
+}
 
 type FiltroTipo = "TODAS" | TipoCliente;
 
@@ -174,12 +189,21 @@ function ResumenAnio({
   alCambiar: () => Promise<void>;
 }) {
   const hoy = hoyISO();
-  // Al entrar a Desempeño queda elegido hoy (D68) o el día tocado en el Inicio (D72); en un año anterior, el año entero.
-  const [sel, setSel] = useState<Seleccion>(() => {
-    const desdeInicio = vista === "desempeno" ? tomarDia() : null;
-    if (desdeInicio) return { tipo: "dia", dia: desdeInicio };
-    return anio === new Date().getFullYear() ? { tipo: "dia", dia: hoy } : null;
+  // Selección de Desempeño (D82): un mes (muestra sus ventas en la tabla) y, dentro, un día.
+  // Al entrar quedan elegidos el mes y el día de hoy (D84), o el día tocado en el Inicio (D72) con su mes.
+  const [desdeInicio] = useState(() => (vista === "desempeno" ? tomarDia() : null));
+  // En años anteriores, la misma fecha de ese año (11 nov 2024); el 29 feb pasa al 28 si el año no es bisiesto.
+  const [diaSel, setDiaSel] = useState<string | null>(() => {
+    if (desdeInicio) return desdeInicio;
+    const ahora = new Date();
+    if (anio === ahora.getFullYear()) return hoy;
+    const ultimoDelMes = new Date(anio, ahora.getMonth() + 1, 0).getDate();
+    return isoLocal(new Date(anio, ahora.getMonth(), Math.min(ahora.getDate(), ultimoDelMes)));
   });
+  const [mesSel, setMesSel] = useState<number | null>(() =>
+    diaSel && diaSel.startsWith(String(anio)) ? new Date(`${diaSel}T12:00:00`).getMonth() : null,
+  );
+  const [semanaSel, setSemanaSel] = useState<number | null>(null); // null = la del día elegido (o la 1)
   const [editando, setEditando] = useState<string | null>(null);
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set()); // pedidos desplegados
   const [borrando, setBorrando] = useState<string | null>(null);
@@ -202,15 +226,31 @@ function ResumenAnio({
   const ganancia = sumar(conGanancia, (f) => f.ganancia ?? 0);
   const sinCosto = contarPedidos(vigentes.filter((f) => f.ganancia === null)); // pedidos, no líneas de sabor (D57)
 
-  // Últimos 7 días (hoy incluido), unidades por día: el mismo gráfico del Inicio.
   const deTodas = todas.filter((f) => !f.anulada);
-  const semana = Array.from({ length: 7 }, (_, i) => {
-    const fecha = new Date();
-    fecha.setDate(fecha.getDate() - (6 - i));
+  const porMesTotal = MESES.map((_, i) =>
+    sumar(
+      vigentes.filter((f) => f.fecha.getMonth() === i),
+      (f) => f.total,
+    ),
+  );
+  const ultimoMesConVentas = porMesTotal.reduce((ultimo, v, i) => (v > 0 ? i : ultimo), 0);
+  // La semana se mueve dentro del mes elegido; sin mes, el del día elegido, el actual o el último con ventas.
+  const mesVista =
+    mesSel ??
+    (diaSel && diaSel.startsWith(String(anio))
+      ? new Date(`${diaSel}T12:00:00`).getMonth()
+      : anio === new Date().getFullYear()
+        ? new Date().getMonth()
+        : ultimoMesConVentas);
+  const semanas = semanasDelMes(anio, mesVista);
+  const semanaDelDia = diaSel ? semanas.findIndex((d) => d.some((f) => isoLocal(f) === diaSel)) : -1;
+  const indiceSemana = Math.min(semanas.length - 1, semanaSel ?? (semanaDelDia >= 0 ? semanaDelDia : 0));
+  const semana = (semanas[indiceSemana] ?? []).map((fecha) => {
     const dia = isoLocal(fecha);
     return {
       dia,
       fecha,
+      delMes: fecha.getMonth() === mesVista,
       valor: sumar(
         deTodas.filter((f) => isoLocal(f.fecha) === dia),
         (f) => f.cantidad,
@@ -218,28 +258,53 @@ function ResumenAnio({
     };
   });
   const barrasSemana: Barra[] = semana.map((d) => ({
-    etiqueta: DIAS[d.fecha.getDay()] ?? "",
+    etiqueta: `${DIAS[d.fecha.getDay()] ?? ""} ${d.fecha.getDate()}`,
     valor: d.valor,
-    destacada: sel?.tipo === "dia" && sel.dia === d.dia,
+    destacada: diaSel === d.dia,
+    apagada: !d.delMes,
   }));
-  const unidadesSemana = semana.reduce((t, d) => t + d.valor, 0);
+  const unidadesSemana = semana.filter((d) => d.delMes).reduce((t, d) => t + d.valor, 0);
+  const primerDia = semana[0]?.fecha;
+  const ultimoDia = semana[6]?.fecha;
+  const conAnio = primerDia && ultimoDia && primerDia.getFullYear() !== ultimoDia.getFullYear();
+  const rangoSemana =
+    primerDia && ultimoDia
+      ? `${primerDia.getDate()} ${MESES[primerDia.getMonth()]}${conAnio ? ` ${primerDia.getFullYear()}` : ""} – ` +
+        `${ultimoDia.getDate()} ${MESES[ultimoDia.getMonth()]} ${ultimoDia.getFullYear()}`
+      : "";
 
-  const seleccionadas =
-    sel?.tipo === "dia"
-      ? deTodas.filter((f) => isoLocal(f.fecha) === sel.dia)
-      : sel?.tipo === "mes"
-        ? vigentes.filter((f) => f.fecha.getMonth() === sel.mes)
-        : vigentes;
-  const nombreSeleccion =
-    sel?.tipo === "dia"
-      ? sel.dia === hoy
-        ? "hoy"
-        : new Date(`${sel.dia}T12:00:00`).toLocaleDateString("es-BO", { weekday: "long", day: "numeric", month: "short" })
-      : sel?.tipo === "mes"
-        ? `${MESES[sel.mes]} ${anio}`
-        : String(anio);
-  const elegirDia = (dia: string) => setSel(sel?.tipo === "dia" && sel.dia === dia ? null : { tipo: "dia", dia });
-  const elegirMes = (m: number) => setSel(sel?.tipo === "mes" && sel.mes === m ? null : { tipo: "mes", mes: m });
+  const seleccionadas = diaSel
+    ? deTodas.filter((f) => isoLocal(f.fecha) === diaSel)
+    : mesSel !== null
+      ? vigentes.filter((f) => f.fecha.getMonth() === mesSel)
+      : vigentes;
+  const nombreSeleccion = diaSel
+    ? diaSel === hoy
+      ? "hoy"
+      : new Date(`${diaSel}T12:00:00`).toLocaleDateString("es-BO", {
+          weekday: "long",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        })
+    : mesSel !== null
+      ? `${MESES[mesSel]} ${anio}`
+      : String(anio);
+  // Tocar un día lo elige junto con su mes; tocarlo otra vez vuelve al mes.
+  const elegirDia = (dia: string) => {
+    if (diaSel === dia) {
+      setDiaSel(null);
+      return;
+    }
+    setDiaSel(dia);
+    setMesSel(new Date(`${dia}T12:00:00`).getMonth());
+  };
+  // Tocar un mes muestra su semana 1 y sus ventas; tocarlo otra vez lo quita (y el día).
+  const elegirMes = (m: number) => {
+    setDiaSel(null);
+    setSemanaSel(mesSel === m ? null : 0); // sin mes vuelve a la semana de hoy
+    setMesSel(mesSel === m ? null : m);
+  };
 
   const porMes = MESES.map((_, i) =>
     sumar(
@@ -251,7 +316,7 @@ function ResumenAnio({
   const barras: Barra[] = MESES.map((m, i) => ({
     etiqueta: m,
     valor: Math.round(porMes[i] ?? 0),
-    destacada: vista === "desempeno" ? sel?.tipo === "mes" && sel.mes === i : mes === String(i),
+    destacada: vista === "desempeno" ? mesSel === i : mes === String(i),
   }));
 
   const productos = [...new Set(seleccionadas.map((f) => f.producto))]
@@ -282,21 +347,34 @@ function ResumenAnio({
   );
 
   // Las líneas de un mismo pedido van juntas, en el orden en que aparecen (D54).
-  const grupos: { clave: string; pedidoId: string | null; filas: Fila[] }[] = [];
-  const porPedido = new Map<string, (typeof grupos)[number]>();
-  for (const f of filtradas) {
-    if (!f.pedidoId) {
-      grupos.push({ clave: f.clave, pedidoId: null, filas: [f] });
-      continue;
+  const agrupar = (lista: Fila[]) => {
+    const grupos: { clave: string; pedidoId: string | null; filas: Fila[] }[] = [];
+    const porPedido = new Map<string, (typeof grupos)[number]>();
+    for (const f of lista) {
+      if (!f.pedidoId) {
+        grupos.push({ clave: f.clave, pedidoId: null, filas: [f] });
+        continue;
+      }
+      let grupo = porPedido.get(f.pedidoId);
+      if (!grupo) {
+        grupo = { clave: `p${f.pedidoId}`, pedidoId: f.pedidoId, filas: [] };
+        porPedido.set(f.pedidoId, grupo);
+        grupos.push(grupo);
+      }
+      grupo.filas.push(f);
     }
-    let grupo = porPedido.get(f.pedidoId);
-    if (!grupo) {
-      grupo = { clave: `p${f.pedidoId}`, pedidoId: f.pedidoId, filas: [] };
-      porPedido.set(f.pedidoId, grupo);
-      grupos.push(grupo);
-    }
-    grupo.filas.push(f);
-  }
+    return grupos;
+  };
+
+  // Desempeño muestra la tabla del historial solo con un mes elegido: el mes o, si hay, su día (D82). Anuladas incluidas.
+  const ventasSeleccion =
+    mesSel === null
+      ? []
+      : diaSel
+        ? filas.filter((f) => isoLocal(f.fecha) === diaSel)
+        : filas.filter((f) => f.fecha.getMonth() === mesSel);
+  const nombreTabla = diaSel ? nombreSeleccion : mesSel !== null ? `${MESES[mesSel]} ${anio}` : "";
+
   const alternarPedido = (clave: string) =>
     setAbiertos((actuales) => {
       const nuevos = new Set(actuales);
@@ -441,6 +519,116 @@ function ResumenAnio({
     </Fragment>
   );
 
+  const tablaVentas = (lista: Fila[], vacio: string) =>
+    lista.length === 0 ? (
+      <p className="vacio">{vacio}</p>
+    ) : (
+      <div className="tabla-envoltura">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Producto</th>
+              <th className="num">Cant.</th>
+              <th className="num">Total</th>
+              <th>Cliente</th>
+              <th>Tipo</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {agrupar(lista).map((g) => {
+              const unico = g.filas.length === 1 ? g.filas[0] : null;
+              if (unico) return filaVenta(unico, false);
+              const primera = g.filas[0] as Fila;
+              const vivas = g.filas.filter((f) => !f.anulada);
+              const abierto = abiertos.has(g.clave);
+              return (
+                <Fragment key={g.clave}>
+                  {/* Toda la fila despliega el pedido, menos la celda de Eliminar (D71). */}
+                  <tr
+                    className={`historial__pedido historial__pedido--tocable ${vivas.length === 0 ? "historial__anulada" : ""}`}
+                    onClick={() => alternarPedido(g.clave)}
+                  >
+                    <td className="secundario">
+                      {/* Las notas anteriores al sistema solo tienen el día. */}
+                      {primera.deCaja
+                        ? `${fechaCorta(primera.fecha.toISOString())} ${hora(primera.fecha.toISOString())}`
+                        : primera.fecha.toLocaleDateString("es-BO", { day: "numeric", month: "short" })}
+                    </td>
+                    <td>
+                      <button type="button" className="historial__desplegar" aria-expanded={abierto}>
+                        <span aria-hidden>{abierto ? "▼" : "▶"}</span> {familiasDe(g.filas).join(", ")}
+                      </button>
+                    </td>
+                    <td className="num">{cantidad(sumar(vivas, (f) => f.cantidad))}</td>
+                    <td className="num">{bs(sumar(vivas, (f) => f.total))}</td>
+                    <td>{primera.cliente ?? <span className="secundario">—</span>}</td>
+                    <td>
+                      <TipoClienteBadge tipo={primera.tipo} />
+                    </td>
+                    <td className="num historial__acciones" onClick={(e) => e.stopPropagation()}>
+                      {/* Mismo nombre que en una venta suelta (D70); la confirmación dice que es el pedido entero. */}
+                      <Button
+                        tamano="chico"
+                        variante="texto"
+                        aria-label="Eliminar el pedido completo"
+                        onClick={() => {
+                          setEditando(null);
+                          setBorrando(borrando === g.clave ? null : g.clave);
+                        }}
+                      >
+                        <MdDeleteOutline aria-hidden /> Eliminar
+                      </Button>
+                    </td>
+                  </tr>
+                  {borrando === g.clave && (
+                    <tr className="fila-formulario">
+                      <td colSpan={7}>
+                        <div className="historial__confirmar">
+                          <span>
+                            ¿Eliminar el pedido de <strong>{primera.cliente ?? "cliente"}</strong> ({g.filas.length} productos,{" "}
+                            {bs(sumar(vivas, (f) => f.total))})?{" "}
+                            <span className="secundario">Sus insumos vuelven al stock. No se puede deshacer.</span>
+                          </span>
+                          <div className="fila-botones">
+                            <Button variante="peligro" onClick={() => void eliminarPedido(g.pedidoId as string, g.filas)}>
+                              Sí, eliminar
+                            </Button>
+                            <Button onClick={() => setBorrando(null)}>Cancelar</Button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {abierto &&
+                    familiasDe(g.filas).map((fam) => {
+                      // Por familia (A–Z) y dentro, los productos en orden alfabético (D55).
+                      const lineas = g.filas
+                        .filter((f) => (f.familia ?? "Otros") === fam)
+                        .sort((a, b) =>
+                          nombreCorto(a.producto, fam).localeCompare(nombreCorto(b.producto, fam), "es", { numeric: true }),
+                        );
+                      return (
+                        <Fragment key={`${g.clave}-${fam}`}>
+                          <tr className="historial__familia">
+                            <td />
+                            <td colSpan={6}>
+                              <span className="historial__familia-nombre">{fam}</span>
+                            </td>
+                          </tr>
+                          {lineas.map((f, i) => filaVenta(f, i === lineas.length - 1 ? "ultima" : "media"))}
+                        </Fragment>
+                      );
+                    })}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+
   const productosDelAnio = [...new Set(vigentes.map((f) => f.producto))].sort((a, b) => a.localeCompare(b, "es"));
 
   return (
@@ -468,41 +656,53 @@ function ResumenAnio({
               valor={conGanancia.length > 0 ? bs(ganancia) : "—"}
               tono={conGanancia.length === 0 ? undefined : ganancia < 0 ? "negativo" : "positivo"}
               detalle={
-                sinCosto > 0
-                  ? `Sin contar ${sinCosto} venta(s) sin costo conocido.`
-                  : "Lo vendido menos el costo de los insumos."
+                sinCosto > 0 ? `Sin contar ${sinCosto} venta(s) sin costo conocido.` : "Lo vendido menos el costo de los insumos."
               }
             />
           </div>
 
-          <div className="dos-columnas">
+          <div className={`dos-columnas ${mesSel !== null ? "historial__con-tabla" : ""}`}>
             <div className="historial__graficos">
-              <Panel titulo="Ventas de la semana (unidades)">
-                <div className="historial__grafico">
+              <Panel titulo={`Ventas de la semana · ${MESES[mesVista]} ${anio} (unidades)`}>
+                <div className="historial__grafico historial__grafico--semana">
                   <BarChart
                     datos={barrasSemana}
                     alto={100}
                     alElegir={(i) => {
                       const d = semana[i];
-                      if (d) elegirDia(d.dia);
+                      if (d?.delMes) elegirDia(d.dia);
                     }}
-                    descripcion={`Unidades vendidas los últimos 7 días: ${barrasSemana.map((b) => `${b.etiqueta} ${b.valor}`).join(", ")}`}
+                    descripcion={`Unidades vendidas del ${rangoSemana}: ${barrasSemana.map((b) => `${b.etiqueta} ${b.valor}`).join(", ")}`}
                   />
-                  <div className="historial__meses historial__dias" aria-label="Elegir un día">
-                    {semana.map((d) => (
-                      <button
-                        key={d.dia}
-                        type="button"
-                        className={`historial__mes ${sel?.tipo === "dia" && sel.dia === d.dia ? "historial__mes--activo" : ""}`}
-                        onClick={() => elegirDia(d.dia)}
-                        title={d.fecha.toLocaleDateString("es-BO", { weekday: "long", day: "numeric", month: "short" })}
-                      >
-                        {DIAS[d.fecha.getDay()]}
-                      </button>
-                    ))}
+                  {/* Flechas para pasar entre las semanas del mes (D82). */}
+                  <div className="historial__semanas">
+                    <button
+                      type="button"
+                      className="historial__flecha"
+                      onClick={() => setSemanaSel(indiceSemana - 1)}
+                      disabled={indiceSemana === 0}
+                      aria-label="Semana anterior"
+                    >
+                      <MdChevronLeft aria-hidden />
+                    </button>
+                    <div className="historial__semana-texto">
+                      <strong>
+                        Semana {indiceSemana + 1} de {semanas.length}
+                      </strong>
+                      <span>{rangoSemana}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="historial__flecha"
+                      onClick={() => setSemanaSel(indiceSemana + 1)}
+                      disabled={indiceSemana >= semanas.length - 1}
+                      aria-label="Semana siguiente"
+                    >
+                      <MdChevronRight aria-hidden />
+                    </button>
                   </div>
                   <p className="secundario historial__nota">
-                    {cantidad(unidadesSemana)} unidades vendidas en los últimos 7 días.
+                    {cantidad(unidadesSemana)} unidades vendidas esta semana en {MESES[mesVista]}.
                   </p>
                 </div>
               </Panel>
@@ -522,7 +722,7 @@ function ResumenAnio({
                         key={m}
                         type="button"
                         disabled={(porMes[i] ?? 0) === 0}
-                        className={`historial__mes ${sel?.tipo === "mes" && sel.mes === i ? "historial__mes--activo" : ""}`}
+                        className={`historial__mes ${mesSel === i ? "historial__mes--activo" : ""}`}
                         onClick={() => elegirMes(i)}
                       >
                         {m}
@@ -530,36 +730,52 @@ function ResumenAnio({
                     ))}
                   </div>
                   <p className="secundario historial__nota">
-                    Toca un día o un mes para ver sus productos. Tócalo otra vez para ver todo el año.
+                    Toca un mes para ver sus ventas abajo y luego un día de la semana para ver solo ese día. Tócalo otra vez para
+                    quitarlo.
                   </p>
                 </div>
               </Panel>
             </div>
 
-            <Panel titulo={`Por producto · ${nombreSeleccion}`}>
-              <div className="tabla-envoltura">
-                {/* Como «Ventas de hoy»: «3 × Queque Coco» y su total (D73). */}
-                <table className="historial__por-producto">
-                  <tbody>
-                    {productos.map((p) => (
-                      <tr key={p.producto}>
-                        <td>
-                          {cantidad(p.unidades)} × {p.producto}
-                        </td>
-                        <td className="num">{bs(p.total)}</td>
-                      </tr>
-                    ))}
-                    {productos.length === 0 && (
-                      <tr>
-                        <td colSpan={2} className="secundario">
-                          No hay ventas {nombreSeleccion === "hoy" ? "hoy" : `el ${nombreSeleccion}`}.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </Panel>
+            {/* Con un mes elegido, la tabla de ventas ocupa el lugar de «Por producto» (D83). */}
+            {mesSel !== null ? (
+              <Panel titulo="Historial de ventas">
+                {mensaje && (
+                  <div className="historial__mensaje">
+                    <Aviso tipo={mensaje.tipo}>{mensaje.texto}</Aviso>
+                  </div>
+                )}
+                {tablaVentas(
+                  ventasSeleccion,
+                  diaSel === hoy ? "Sin ventas hoy" : `Sin ventas ${diaSel ? `el ${nombreTabla}` : `en ${nombreTabla}`}`,
+                )}
+              </Panel>
+            ) : (
+              <Panel titulo={`Por producto · ${nombreSeleccion}`}>
+                <div className="tabla-envoltura">
+                  {/* Como «Ventas de hoy»: «3 × Queque Coco» y su total (D73). */}
+                  <table className="historial__por-producto">
+                    <tbody>
+                      {productos.map((p) => (
+                        <tr key={p.producto}>
+                          <td>
+                            {cantidad(p.unidades)} × {p.producto}
+                          </td>
+                          <td className="num">{bs(p.total)}</td>
+                        </tr>
+                      ))}
+                      {productos.length === 0 && (
+                        <tr>
+                          <td colSpan={2} className="secundario">
+                            Sin ventas {nombreSeleccion === "hoy" ? "hoy" : `el ${nombreSeleccion}`}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Panel>
+            )}
           </div>
         </div>
       )}
@@ -610,118 +826,7 @@ function ResumenAnio({
               </select>
             </Campo>
           </div>
-          {filtradas.length === 0 ? (
-            <p className="vacio">No hay ventas con estos filtros.</p>
-          ) : (
-            <div className="tabla-envoltura">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Producto</th>
-                    <th className="num">Cant.</th>
-                    <th className="num">Total</th>
-                    <th>Cliente</th>
-                    <th>Tipo</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {grupos.map((g) => {
-                    const unico = g.filas.length === 1 ? g.filas[0] : null;
-                    if (unico) return filaVenta(unico, false);
-                    const primera = g.filas[0] as Fila;
-                    const vivas = g.filas.filter((f) => !f.anulada);
-                    const abierto = abiertos.has(g.clave);
-                    return (
-                      <Fragment key={g.clave}>
-                        {/* Toda la fila despliega el pedido, menos la celda de Eliminar (D71). */}
-                        <tr
-                          className={`historial__pedido historial__pedido--tocable ${vivas.length === 0 ? "historial__anulada" : ""}`}
-                          onClick={() => alternarPedido(g.clave)}
-                        >
-                          <td className="secundario">
-                            {/* Las notas anteriores al sistema solo tienen el día. */}
-                            {primera.deCaja
-                              ? `${fechaCorta(primera.fecha.toISOString())} ${hora(primera.fecha.toISOString())}`
-                              : primera.fecha.toLocaleDateString("es-BO", { day: "numeric", month: "short" })}
-                          </td>
-                          <td>
-                            <button
-                              type="button"
-                              className="historial__desplegar"
-                              aria-expanded={abierto}
-                            >
-                              <span aria-hidden>{abierto ? "▼" : "▶"}</span> {familiasDe(g.filas).join(", ")}
-                            </button>
-                          </td>
-                          <td className="num">{cantidad(sumar(vivas, (f) => f.cantidad))}</td>
-                          <td className="num">{bs(sumar(vivas, (f) => f.total))}</td>
-                          <td>{primera.cliente ?? <span className="secundario">—</span>}</td>
-                          <td>
-                            <TipoClienteBadge tipo={primera.tipo} />
-                          </td>
-                          <td className="num historial__acciones" onClick={(e) => e.stopPropagation()}>
-                            {/* Mismo nombre que en una venta suelta (D70); la confirmación dice que es el pedido entero. */}
-                            <Button
-                              tamano="chico"
-                              variante="texto"
-                              aria-label="Eliminar el pedido completo"
-                              onClick={() => {
-                                setEditando(null);
-                                setBorrando(borrando === g.clave ? null : g.clave);
-                              }}
-                            >
-                              <MdDeleteOutline aria-hidden /> Eliminar
-                            </Button>
-                          </td>
-                        </tr>
-                        {borrando === g.clave && (
-                          <tr className="fila-formulario">
-                            <td colSpan={7}>
-                              <div className="historial__confirmar">
-                                <span>
-                                  ¿Eliminar el pedido de <strong>{primera.cliente ?? "cliente"}</strong> ({g.filas.length}{" "}
-                                  productos, {bs(sumar(vivas, (f) => f.total))})?{" "}
-                                  <span className="secundario">Sus insumos vuelven al stock. No se puede deshacer.</span>
-                                </span>
-                                <div className="fila-botones">
-                                  <Button variante="peligro" onClick={() => void eliminarPedido(g.pedidoId as string, g.filas)}>
-                                    Sí, eliminar
-                                  </Button>
-                                  <Button onClick={() => setBorrando(null)}>Cancelar</Button>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                        {abierto &&
-                          familiasDe(g.filas).map((fam) => {
-                            // Por familia (A–Z) y dentro, los productos en orden alfabético (D55).
-                            const lineas = g.filas
-                              .filter((f) => (f.familia ?? "Otros") === fam)
-                              .sort((a, b) =>
-                                nombreCorto(a.producto, fam).localeCompare(nombreCorto(b.producto, fam), "es", { numeric: true }),
-                              );
-                            return (
-                              <Fragment key={`${g.clave}-${fam}`}>
-                                <tr className="historial__familia">
-                                  <td />
-                                  <td colSpan={6}>
-                                    <span className="historial__familia-nombre">{fam}</span>
-                                  </td>
-                                </tr>
-                                {lineas.map((f, i) => filaVenta(f, i === lineas.length - 1 ? "ultima" : "media"))}
-                              </Fragment>
-                            );
-                          })}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {tablaVentas(filtradas, "No hay ventas con estos filtros.")}
         </Panel>
       )}
     </>

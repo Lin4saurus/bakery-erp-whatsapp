@@ -19,8 +19,10 @@ export function Sidebar<K extends string>({
   elegir,
   cerrar,
   pie,
+  insignias = {},
 }: {
   pie?: ReactNode;
+  insignias?: Partial<Record<K, number>>; // número junto al ítem (ej. pedidos de hoy)
   colapsado: boolean; // solo íconos (D62); en pantallas chicas no aplica
   alternarColapsado: () => void;
   items: readonly ItemMenu<K>[];
@@ -72,6 +74,11 @@ export function Sidebar<K extends string>({
                   >
                     <Icono className="sidebar__icono" aria-hidden />
                     <span className="sidebar__texto">{titulo}</span>
+                    {(insignias[clave] ?? 0) > 0 && (
+                      <span className="sidebar__insignia" aria-label={`${insignias[clave]} por atender`}>
+                        {insignias[clave]}
+                      </span>
+                    )}
                   </button>
                 ))}
             </div>

@@ -391,10 +391,21 @@ describe("API de productos y recetas", () => {
 
   test("borrar una categoría borra todas sus recetas, respalda antes y respeta los rellenos usados afuera (D64)", async () => {
     const crear = (nombre: string, extra: Record<string, unknown> = {}) =>
-      api<Producto>("POST", "/productos", { nombre, categoria: "Prueba D64", rendimientoReceta: "1", precioVenta: "10", ...extra });
+      api<Producto>("POST", "/productos", {
+        nombre,
+        categoria: "Prueba D64",
+        rendimientoReceta: "1",
+        precioVenta: "10",
+        ...extra,
+      });
     const uno = await crear("Prueba D64 uno");
     const dos = await crear("Prueba D64 dos");
-    const relleno = await crear("Relleno D64", { tipo: "INTERMEDIO", unidadRendimiento: "GRAMO", rendimientoReceta: "100", precioVenta: null });
+    const relleno = await crear("Relleno D64", {
+      tipo: "INTERMEDIO",
+      unidadRendimiento: "GRAMO",
+      rendimientoReceta: "100",
+      precioVenta: null,
+    });
     await api("PUT", `/productos/${uno.body.id}/receta`, { ingredientes: [], subRecetas: [] });
     const venta = await api<VentaCreada>("POST", "/ventas", { productoId: uno.body.id, cantidad: 1 });
     assert.equal(venta.status, 201);
@@ -406,7 +417,10 @@ describe("API de productos y recetas", () => {
       rendimientoReceta: "1",
       precioVenta: "5",
     });
-    await api("PUT", `/productos/${otra.body.id}/receta`, { ingredientes: [], subRecetas: [{ subProductoId: relleno.body.id, cantidad: 10 }] });
+    await api("PUT", `/productos/${otra.body.id}/receta`, {
+      ingredientes: [],
+      subRecetas: [{ subProductoId: relleno.body.id, cantidad: 10 }],
+    });
     const bloqueado = await api<ErrorApi>("DELETE", `/productos/categorias/${encodeURIComponent("Prueba D64")}?tipo=INTERMEDIO`);
     assert.equal(bloqueado.status, 409);
     assert.match(bloqueado.body.error, /Otra D64/);
@@ -455,11 +469,10 @@ const stockDe = async (nombre: string): Promise<Prisma.Decimal> => {
 describe("Inventario de insumos", () => {
   test("una compra por envases suma stock, guarda el movimiento y puede actualizar el precio", async () => {
     const harina = await insumoPorNombre("Harina");
-    const compra = await api<{ movimiento: Movimiento; insumo: InsumoConStock }>(
-      "POST",
-      `/insumos/${harina.id}/movimientos`,
-      { tipo: "COMPRA", envases: 2 },
-    );
+    const compra = await api<{ movimiento: Movimiento; insumo: InsumoConStock }>("POST", `/insumos/${harina.id}/movimientos`, {
+      tipo: "COMPRA",
+      envases: 2,
+    });
     assert.equal(compra.status, 201);
     assert.ok(cerca(compra.body.insumo.stockActual, "100000"));
     assert.equal(compra.body.movimiento.nota, "2 envase(s)");
@@ -753,7 +766,10 @@ describe("Brownies", () => {
     const actual = await api<Costo>("GET", `/productos/${masa.id}/costo`);
     assert.ok(!actual.body.insumos.some((l) => l.nombre === "Limpieza y otros"));
     const { status, body } = await api<ErrorApi>("PUT", `/productos/${masa.id}/receta`, {
-      ingredientes: [...actual.body.insumos.map((l) => ({ insumoId: l.insumoId, cantidad: l.cantidad })), { insumoId: limpieza.id, cantidad: "0.5" }],
+      ingredientes: [
+        ...actual.body.insumos.map((l) => ({ insumoId: l.insumoId, cantidad: l.cantidad })),
+        { insumoId: limpieza.id, cantidad: "0.5" },
+      ],
     });
     assert.equal(status, 422);
     assert.match(body.error, /gasto/);
@@ -865,8 +881,15 @@ describe("Ventas históricas", () => {
     assert.equal(porNombre.get("Brownies premium 4 u")?.productoId, premium4.id);
     // Sin receta en el ERP: Frutillita (7), Feliz cumpleaños (1) y Tres leches personal frutos rojos (1).
     const sinVincular = body.productos.filter((p) => p.productoId === null);
-    assert.deepEqual(sinVincular.map((p) => p.producto).sort(), ["Feliz cumpleaños", "Frutillita", "Tres leches personal frutos rojos"]);
-    assert.equal(sinVincular.reduce((n, p) => n + p.ventas, 0), 9);
+    assert.deepEqual(sinVincular.map((p) => p.producto).sort(), [
+      "Feliz cumpleaños",
+      "Frutillita",
+      "Tres leches personal frutos rojos",
+    ]);
+    assert.equal(
+      sinVincular.reduce((n, p) => n + p.ventas, 0),
+      9,
+    );
   });
 
   test("filtra por fechas y reimportar no duplica", async () => {
@@ -935,15 +958,29 @@ interface ListaGastos {
 describe("Gastos operativos", () => {
   test("crea gastos y los lista con totales por categoría y filtro de fechas", async () => {
     const hoy = new Date().toLocaleDateString("sv-SE");
-    const esponja = await api<Gasto>("POST", "/gastos", { descripcion: "Esponja y jabón", monto: "12.50", categoria: "LIMPIEZA" });
+    const esponja = await api<Gasto>("POST", "/gastos", {
+      descripcion: "Esponja y jabón",
+      monto: "12.50",
+      categoria: "LIMPIEZA",
+    });
     assert.equal(esponja.status, 201);
     assert.match(esponja.body.id, /^[0-9a-f-]{36}$/);
     assert.ok(cerca(esponja.body.monto, "12.5"));
     await api<Gasto>("POST", "/gastos", { descripcion: "Molde redondo", monto: 45, categoria: "EQUIPAMIENTO" });
-    const viejo = await api<Gasto>("POST", "/gastos", { descripcion: "Toppers", monto: "30", categoria: "EQUIPAMIENTO", fecha: "2026-01-15" });
+    const viejo = await api<Gasto>("POST", "/gastos", {
+      descripcion: "Toppers",
+      monto: "30",
+      categoria: "EQUIPAMIENTO",
+      fecha: "2026-01-15",
+    });
     assert.equal(viejo.status, 201);
     // D47: lo que la dueña gasta en sí misma con plata del negocio va aparte.
-    const personal = await api<Gasto>("POST", "/gastos", { descripcion: "Almuerzo", monto: "20", categoria: "USO_PERSONAL", fecha: "2026-01-20" });
+    const personal = await api<Gasto>("POST", "/gastos", {
+      descripcion: "Almuerzo",
+      monto: "20",
+      categoria: "USO_PERSONAL",
+      fecha: "2026-01-20",
+    });
     assert.equal(personal.status, 201);
 
     // Las compras de insumo de tests anteriores también son gastos de hoy (D51): aquí se miran los demás.
@@ -975,13 +1012,20 @@ describe("Gastos operativos", () => {
     for (const [cuerpo, campo] of casos) {
       const { status, body } = await api<ErrorApi>("POST", "/gastos", cuerpo);
       assert.equal(status, 400, JSON.stringify(cuerpo));
-      assert.ok(body.detalles?.some((d) => d.campo === campo), `${campo}: ${JSON.stringify(body)}`);
+      assert.ok(
+        body.detalles?.some((d) => d.campo === campo),
+        `${campo}: ${JSON.stringify(body)}`,
+      );
     }
     assert.equal((await api("GET", "/gastos?desde=enero")).status, 400);
   });
 
   test("borra un gasto mal cargado una sola vez", async () => {
-    const { body: gasto } = await api<Gasto>("POST", "/gastos", { descripcion: "Error de tipeo", monto: 999, categoria: "OTROS" });
+    const { body: gasto } = await api<Gasto>("POST", "/gastos", {
+      descripcion: "Error de tipeo",
+      monto: 999,
+      categoria: "OTROS",
+    });
     assert.equal((await api("DELETE", `/gastos/${gasto.id}`)).status, 204);
     assert.equal((await api("DELETE", `/gastos/${gasto.id}`)).status, 404);
     assert.equal((await api("DELETE", "/gastos/123")).status, 400);
@@ -1046,7 +1090,10 @@ describe("Venta con fecha de otro día", () => {
     for (const fecha of [manana.toLocaleDateString("sv-SE"), "2026-02-31", "ayer"]) {
       const { status, body } = await api<ErrorApi>("POST", "/ventas", { productoId: quinoa.id, cantidad: 1, fecha });
       assert.equal(status, 400, fecha);
-      assert.ok(body.detalles?.some((d) => d.campo === "fecha"), fecha);
+      assert.ok(
+        body.detalles?.some((d) => d.campo === "fecha"),
+        fecha,
+      );
     }
   });
 });
@@ -1085,9 +1132,15 @@ describe("Clientes y precios acordados", () => {
   test("el seed crea los mayoristas con su precio acordado y el filtro por tipo funciona", async () => {
     const { status, body } = await api<Cliente[]>("GET", "/clientes?tipo=MAYORISTA");
     assert.equal(status, 200);
-    assert.deepEqual(body.map((c) => c.nombre), ["Eliana", "Mercado Primavera"]);
+    assert.deepEqual(
+      body.map((c) => c.nombre),
+      ["Eliana", "Mercado Primavera"],
+    );
     const primavera = body.find((c) => c.nombre === "Mercado Primavera");
-    assert.deepEqual(primavera?.precios.map((p) => [p.producto.nombre, Number(p.precio)]), [["Queque", 12]]);
+    assert.deepEqual(
+      primavera?.precios.map((p) => [p.producto.nombre, Number(p.precio)]),
+      [["Queque", 12]],
+    );
     const minoristas = await api<Cliente[]>("GET", "/clientes?tipo=MINORISTA");
     // Mostrador + los 56 minoristas del Excel 2024 («Venta esquina» no es un cliente) + los creados al vender.
     assert.ok(minoristas.body.length >= 57);
@@ -1117,7 +1170,11 @@ describe("Clientes y precios acordados", () => {
   test("la venta usa el precio acordado con cada mayorista; sin cliente, el precio de venta", async () => {
     const primavera = await clientePorNombre("Mercado Primavera");
     const queque = await productoPorNombre("Queque");
-    const mayorista = await api<{ venta: VentaConCliente }>("POST", "/ventas", { productoId: queque.id, cantidad: 3, clienteId: primavera.id });
+    const mayorista = await api<{ venta: VentaConCliente }>("POST", "/ventas", {
+      productoId: queque.id,
+      cantidad: 3,
+      clienteId: primavera.id,
+    });
     assert.equal(mayorista.status, 201);
     assert.ok(cerca(mayorista.body.venta.precioUnitario, "12"));
     assert.ok(cerca(mayorista.body.venta.totalVenta, "36"));
@@ -1127,18 +1184,31 @@ describe("Clientes y precios acordados", () => {
     assert.ok(cerca(minorista.body.venta.precioUnitario, "16"));
 
     const eliana = await clientePorNombre("Eliana");
-    const deEliana = await api<{ venta: VentaConCliente }>("POST", "/ventas", { productoId: queque.id, cantidad: 2, clienteId: eliana.id });
+    const deEliana = await api<{ venta: VentaConCliente }>("POST", "/ventas", {
+      productoId: queque.id,
+      cantidad: 2,
+      clienteId: eliana.id,
+    });
     assert.ok(cerca(deEliana.body.venta.precioUnitario, "13"));
 
     // Con precio acordado, no se cambia a mano en la venta.
-    const aMano = await api<ErrorApi>("POST", "/ventas", { productoId: queque.id, cantidad: 1, clienteId: primavera.id, precioUnitario: "10" });
+    const aMano = await api<ErrorApi>("POST", "/ventas", {
+      productoId: queque.id,
+      cantidad: 1,
+      clienteId: primavera.id,
+      precioUnitario: "10",
+    });
     assert.equal(aMano.status, 422);
   });
 
   test("un mayorista ya no indica sabores: cada sabor es su propio producto (D57)", async () => {
     const primavera = await clientePorNombre("Mercado Primavera");
     const queque = await productoPorNombre("Queque");
-    const venta = await api<{ venta: VentaConCliente }>("POST", "/ventas", { productoId: queque.id, cantidad: 6, clienteId: primavera.id });
+    const venta = await api<{ venta: VentaConCliente }>("POST", "/ventas", {
+      productoId: queque.id,
+      cantidad: 6,
+      clienteId: primavera.id,
+    });
     assert.equal(venta.status, 201);
     assert.ok(!("sabores" in venta.body.venta));
   });
@@ -1172,13 +1242,22 @@ describe("Clientes y precios acordados", () => {
     const sol = await clientePorNombre("Cafetería Sol");
     const queque = await productoPorNombre("Queque");
     // Sin precio acordado: paga el precio de venta o el que se escriba (regateo).
-    const regateo = await api<{ venta: VentaConCliente }>("POST", "/ventas", { productoId: queque.id, cantidad: 1, clienteId: sol.id, precioUnitario: "14" });
+    const regateo = await api<{ venta: VentaConCliente }>("POST", "/ventas", {
+      productoId: queque.id,
+      cantidad: 1,
+      clienteId: sol.id,
+      precioUnitario: "14",
+    });
     assert.ok(cerca(regateo.body.venta.precioUnitario, "14"));
 
     const fijar = await api<Cliente>("PUT", `/clientes/${sol.id}/precios/${queque.id}`, { precio: "14.5" });
     assert.equal(fijar.status, 200);
     assert.ok(fijar.body.precios.some((p) => p.productoId === queque.id && cerca(p.precio, "14.5")));
-    const venta = await api<{ venta: VentaConCliente }>("POST", "/ventas", { productoId: queque.id, cantidad: 1, clienteId: sol.id });
+    const venta = await api<{ venta: VentaConCliente }>("POST", "/ventas", {
+      productoId: queque.id,
+      cantidad: 1,
+      clienteId: sol.id,
+    });
     assert.ok(cerca(venta.body.venta.precioUnitario, "14.5"));
     // El precio de otro mayorista no cambia.
     const primavera = await clientePorNombre("Mercado Primavera");
@@ -1186,7 +1265,11 @@ describe("Clientes y precios acordados", () => {
 
     const quitar = await api<Cliente>("DELETE", `/clientes/${sol.id}/precios/${queque.id}`);
     assert.deepEqual(quitar.body.precios, []);
-    const otraVez = await api<{ venta: VentaConCliente }>("POST", "/ventas", { productoId: queque.id, cantidad: 1, clienteId: sol.id });
+    const otraVez = await api<{ venta: VentaConCliente }>("POST", "/ventas", {
+      productoId: queque.id,
+      cantidad: 1,
+      clienteId: sol.id,
+    });
     assert.ok(cerca(otraVez.body.venta.precioUnitario, "16"));
 
     // Un minorista no tiene precio acordado; precio negativo o producto inexistente no se aceptan.
@@ -1209,10 +1292,9 @@ describe("Clientes y precios acordados", () => {
 
   test("el listado separa minoristas y mayoristas, y el reporte suma ventas e historial por cliente", async () => {
     const hoy = new Date().toLocaleDateString("sv-SE");
-    const { body } = await api<ListaVentas & { resumen: { minoristas: { ventas: number }; mayoristas: { ventas: number; totalVenta: string } } }>(
-      "GET",
-      `/ventas?desde=${hoy}&hasta=${hoy}`,
-    );
+    const { body } = await api<
+      ListaVentas & { resumen: { minoristas: { ventas: number }; mayoristas: { ventas: number; totalVenta: string } } }
+    >("GET", `/ventas?desde=${hoy}&hasta=${hoy}`);
     const ventas = body.ventas as VentaConCliente[];
     const mayoristas = ventas.filter((v) => !v.anulada && v.clienteTipo === "MAYORISTA");
     assert.equal(body.resumen.mayoristas.ventas, mayoristas.length);
@@ -1248,7 +1330,7 @@ describe("Insumos sin control de stock (D40)", () => {
     const limpieza = await insumoPorNombre("Limpieza y otros");
     assert.equal((agua as Insumo & { controlaStock: boolean }).controlaStock, false);
     assert.equal((limpieza as Insumo & { controlaStock: boolean }).controlaStock, false);
-    assert.equal((await insumoPorNombre("Harina") as Insumo & { controlaStock: boolean }).controlaStock, true);
+    assert.equal(((await insumoPorNombre("Harina")) as Insumo & { controlaStock: boolean }).controlaStock, true);
     const { body } = await api<{ nombre: string }[]>("GET", "/insumos/alertas");
     assert.ok(!body.some((a) => a.nombre === "Agua" || a.nombre === "Limpieza y otros"));
   });
@@ -1295,9 +1377,18 @@ describe("Actualizar stock con el número contado", () => {
     assert.equal(status, 201);
     assert.equal(body.insumo.stockActual, "120");
 
-    const igual = await api<ErrorApi>("POST", `/insumos/${huevo.id}/movimientos`, { tipo: "AJUSTE", stockReal: "120", nota: "x" });
+    const igual = await api<ErrorApi>("POST", `/insumos/${huevo.id}/movimientos`, {
+      tipo: "AJUSTE",
+      stockReal: "120",
+      nota: "x",
+    });
     assert.equal(igual.status, 422);
-    const ambos = await api("POST", `/insumos/${huevo.id}/movimientos`, { tipo: "AJUSTE", stockReal: "1", cantidad: "1", nota: "x" });
+    const ambos = await api("POST", `/insumos/${huevo.id}/movimientos`, {
+      tipo: "AJUSTE",
+      stockReal: "1",
+      cantidad: "1",
+      nota: "x",
+    });
     assert.equal(ambos.status, 400);
   });
 });
@@ -1353,7 +1444,10 @@ describe("Corregir y eliminar ventas desde el Historial (D43)", () => {
 
   test("corrige y elimina ventas del historial, y reimportar no las pisa", async () => {
     type Fila = { id: number; fecha: string; cantidad: string; valor: string; cliente: string | null };
-    const notas = await api<{ ventas: Fila[]; resumen: { ventas: number } }>("GET", "/historico?desde=2026-07-01&hasta=2026-07-31");
+    const notas = await api<{ ventas: Fila[]; resumen: { ventas: number } }>(
+      "GET",
+      "/historico?desde=2026-07-01&hasta=2026-07-31",
+    );
     const nota = notas.body.ventas.find((v) => Number(v.cantidad) === 10);
     assert.ok(nota);
     const eliana = await clientePorNombre("Eliana");
@@ -1369,7 +1463,10 @@ describe("Corregir y eliminar ventas desde el Historial (D43)", () => {
     const otra = notas.body.ventas.find((v) => v.id !== nota.id);
     assert.ok(otra);
     assert.equal((await api("DELETE", `/historico/${otra.id}`)).status, 200);
-    const despues = await api<{ ventas: Fila[]; resumen: { ventas: number } }>("GET", "/historico?desde=2026-07-01&hasta=2026-07-31");
+    const despues = await api<{ ventas: Fila[]; resumen: { ventas: number } }>(
+      "GET",
+      "/historico?desde=2026-07-01&hasta=2026-07-31",
+    );
     assert.equal(despues.body.resumen.ventas, notas.body.resumen.ventas - 1);
     assert.equal((await api("PATCH", `/historico/${otra.id}`, { valor: "1" })).status, 404);
 
@@ -1383,7 +1480,10 @@ describe("Corregir y eliminar ventas desde el Historial (D43)", () => {
 
     // Volver a importar no revive la eliminada ni deshace la corrección.
     execSync("npx tsx database/prisma/importar-historico.ts", { stdio: "ignore", env: process.env });
-    const reimportado = await api<{ ventas: Fila[]; resumen: { ventas: number } }>("GET", "/historico?desde=2026-07-01&hasta=2026-07-31");
+    const reimportado = await api<{ ventas: Fila[]; resumen: { ventas: number } }>(
+      "GET",
+      "/historico?desde=2026-07-01&hasta=2026-07-31",
+    );
     assert.equal(reimportado.body.resumen.ventas, despues.body.resumen.ventas - 1); // menos el pedido eliminado
     assert.ok(reimportado.body.ventas.some((v) => v.id === nota.id && cerca(v.valor, "108")));
 
@@ -1398,7 +1498,12 @@ describe("Toda venta lleva cliente con celular (D44)", () => {
     const sinNombre = await api<ErrorApi>("POST", "/ventas", { productoId: queque.id, cantidad: 1, __sinCliente: true });
     assert.equal(sinNombre.status, 400);
     assert.ok(sinNombre.body.detalles?.some((d) => d.campo === "clienteNombre"));
-    const sinCelular = await api<ErrorApi>("POST", "/ventas", { productoId: queque.id, cantidad: 1, clienteNombre: "Marco Aurelio", __sinCliente: true });
+    const sinCelular = await api<ErrorApi>("POST", "/ventas", {
+      productoId: queque.id,
+      cantidad: 1,
+      clienteNombre: "Marco Aurelio",
+      __sinCliente: true,
+    });
     assert.equal(sinCelular.status, 400);
     assert.ok(sinCelular.body.detalles?.some((d) => d.campo === "celular"));
     const corto = await api<ErrorApi>("POST", "/ventas", {
@@ -1438,16 +1543,25 @@ describe("Toda venta lleva cliente con celular (D44)", () => {
   test("a un cliente sin celular se le pide y se le guarda", async () => {
     const queque = await productoPorNombre("Queque");
     const sinCelular = await api<Cliente>("POST", "/clientes", { nombre: "Doña Petrona" });
-    const falta = await api<ErrorApi>("POST", "/ventas", { productoId: queque.id, cantidad: 1, clienteId: sinCelular.body.id, __sinCliente: true });
+    const falta = await api<ErrorApi>("POST", "/ventas", {
+      productoId: queque.id,
+      cantidad: 1,
+      clienteId: sinCelular.body.id,
+      __sinCliente: true,
+    });
     assert.equal(falta.status, 400);
     assert.ok(falta.body.detalles?.some((d) => d.campo === "celular"));
-    const ok = await api("POST", "/ventas", { productoId: queque.id, cantidad: 1, clienteId: sinCelular.body.id, celular: "76543210" });
+    const ok = await api("POST", "/ventas", {
+      productoId: queque.id,
+      cantidad: 1,
+      clienteId: sinCelular.body.id,
+      celular: "76543210",
+    });
     assert.equal(ok.status, 201);
     const actualizada = await clientePorNombre("Doña Petrona");
     assert.equal((actualizada as Cliente & { celular: string }).celular, "76543210");
   });
 });
-
 
 // ---------- Pedidos de varios productos en la Caja (D48) ----------
 
@@ -1537,7 +1651,10 @@ describe("Pedidos de varios productos (D48)", () => {
       ],
     });
     assert.equal(repetido.status, 400);
-    assert.equal((await api("POST", "/ventas/pedido", { ...base, lineas: [{ productoId: queque.id, cantidad: 0 }] })).status, 400);
+    assert.equal(
+      (await api("POST", "/ventas/pedido", { ...base, lineas: [{ productoId: queque.id, cantidad: 0 }] })).status,
+      400,
+    );
     assert.equal((await api("POST", "/ventas/pedido", { lineas: [{ productoId: queque.id, cantidad: 1 }] })).status, 400);
 
     const antes = (await api<ListaVentas>("GET", "/ventas")).body.ventas.length;
@@ -1569,7 +1686,12 @@ describe("Compra de insumos desde Gastos (D51)", () => {
   test("comprar por envases suma al stock, actualiza el precio y va aparte de la utilidad", async () => {
     const harina = (await insumoPorNombre("Harina")) as Insumo & { contenidoEnvase: string };
     const antes = await stockDe("Harina");
-    const compra = await api<GastoInsumo>("POST", "/gastos", { categoria: "INSUMOS", insumoId: harina.id, envases: 2, monto: "30" });
+    const compra = await api<GastoInsumo>("POST", "/gastos", {
+      categoria: "INSUMOS",
+      insumoId: harina.id,
+      envases: 2,
+      monto: "30",
+    });
     assert.equal(compra.status, 201);
     assert.equal(compra.body.categoria, "INSUMOS");
     assert.match(compra.body.descripcion, /Harina · 2 envase/);
@@ -1617,13 +1739,19 @@ describe("Compra de insumos desde Gastos (D51)", () => {
     for (const [cuerpo, campo] of casos) {
       const { status, body } = await api<ErrorApi>("POST", "/gastos", cuerpo);
       assert.equal(status, 400, JSON.stringify(cuerpo));
-      assert.ok(body.detalles?.some((d) => d.campo === campo), `${campo}: ${JSON.stringify(body)}`);
+      assert.ok(
+        body.detalles?.some((d) => d.campo === campo),
+        `${campo}: ${JSON.stringify(body)}`,
+      );
     }
     assert.equal((await api("POST", "/gastos", { categoria: "INSUMOS", insumoId: 999999, envases: 1, monto: 10 })).status, 404);
     // Lo que no lleva stock (agua de la casa, «Limpieza y otros») no se compra como insumo.
     const limpieza = await insumoPorNombre("Limpieza y otros");
     await api("PATCH", `/insumos/${limpieza.id}`, { controlaStock: false });
-    assert.equal((await api("POST", "/gastos", { categoria: "INSUMOS", insumoId: limpieza.id, envases: 1, monto: 10 })).status, 422);
+    assert.equal(
+      (await api("POST", "/gastos", { categoria: "INSUMOS", insumoId: limpieza.id, envases: 1, monto: 10 })).status,
+      422,
+    );
   });
 });
 
@@ -1631,7 +1759,10 @@ describe("Compra desde Insumos también queda en Gastos (D51)", () => {
   test("una COMPRA por envases crea el gasto al precio del envase y borrarlo devuelve el stock", async () => {
     const harina = (await insumoPorNombre("Harina")) as Insumo & { contenidoEnvase: string };
     const antes = await stockDe("Harina");
-    const compra = await api<{ gasto: GastoInsumo | null }>("POST", `/insumos/${harina.id}/movimientos`, { tipo: "COMPRA", envases: 3 });
+    const compra = await api<{ gasto: GastoInsumo | null }>("POST", `/insumos/${harina.id}/movimientos`, {
+      tipo: "COMPRA",
+      envases: 3,
+    });
     assert.equal(compra.status, 201);
     assert.ok(compra.body.gasto);
     assert.equal(compra.body.gasto.categoria, "INSUMOS");
@@ -1644,7 +1775,11 @@ describe("Compra desde Insumos también queda en Gastos (D51)", () => {
 
   test("un AJUSTE de stock no crea gasto", async () => {
     const huevo = await insumoPorNombre("Huevo");
-    const ajuste = await api<{ gasto: unknown }>("POST", `/insumos/${huevo.id}/movimientos`, { tipo: "AJUSTE", cantidad: -1, nota: "Se rompió" });
+    const ajuste = await api<{ gasto: unknown }>("POST", `/insumos/${huevo.id}/movimientos`, {
+      tipo: "AJUSTE",
+      cantidad: -1,
+      nota: "Se rompió",
+    });
     assert.equal(ajuste.status, 201);
     assert.equal(ajuste.body.gasto, null);
   });
@@ -1654,7 +1789,11 @@ describe("Tipo del cliente nuevo desde la Caja (D53)", () => {
   test("un cliente nuevo es minorista por defecto y mayorista si se elige", async () => {
     const queque = await productoPorNombre("Queque");
     const linea = [{ productoId: queque.id, cantidad: 1 }];
-    const minorista = await api<PedidoCreado>("POST", "/ventas/pedido", { clienteNombre: "Nueva Minorista", celular: "70000011", lineas: linea });
+    const minorista = await api<PedidoCreado>("POST", "/ventas/pedido", {
+      clienteNombre: "Nueva Minorista",
+      celular: "70000011",
+      lineas: linea,
+    });
     assert.equal(minorista.status, 201);
     assert.equal((await clientePorNombre("Nueva Minorista")).tipo, "MINORISTA");
 
@@ -1670,7 +1809,11 @@ describe("Tipo del cliente nuevo desde la Caja (D53)", () => {
     // A un cliente que ya existe no se le cambia el tipo.
     await api("POST", "/ventas/pedido", { clienteNombre: "Nueva Minorista", clienteTipo: "MAYORISTA", lineas: linea });
     assert.equal((await clientePorNombre("Nueva Minorista")).tipo, "MINORISTA");
-    assert.equal((await api("POST", "/ventas/pedido", { clienteNombre: "X", clienteTipo: "VIP", celular: "70000013", lineas: linea })).status, 400);
+    assert.equal(
+      (await api("POST", "/ventas/pedido", { clienteNombre: "X", clienteTipo: "VIP", celular: "70000013", lineas: linea }))
+        .status,
+      400,
+    );
   });
 });
 
@@ -1696,5 +1839,251 @@ describe("Eliminar un pedido entero (D54)", () => {
     assert.ok(pedido.body.ventas.every((v) => !ids.includes(v.id)));
     assert.equal((await api("DELETE", `/ventas/pedidos/${pedido.body.pedidoId}`)).status, 404);
     assert.equal((await api("DELETE", "/ventas/pedidos/no-es-uuid")).status, 400);
+  });
+});
+
+// ---------- Pedidos por entregar (D81) ----------
+
+type PedidoEntrega = {
+  id: string;
+  numero: number;
+  estado: string;
+  origen: string;
+  fechaEntrega: string;
+  horaEntrega: string | null;
+  total: string;
+  ventaPedidoId: string | null;
+  cliente: { id: string; nombre: string };
+  lineas: { productoId: number; cantidad: string; precioUnitario: string; subtotal: string }[];
+};
+
+const diaMas = (dias: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + dias);
+  return d.toLocaleDateString("sv-SE");
+};
+
+describe("Pedidos por entregar (D81)", () => {
+  const nuevoPedido = async (extra: Record<string, unknown> = {}) => {
+    const queque = await productoPorNombre("Queque");
+    const quinoa = await productoPorNombre("Queque de quinoa");
+    return api<PedidoEntrega>("POST", "/pedidos", {
+      clienteNombre: "Mostrador",
+      celular: "70000000",
+      fechaEntrega: diaMas(1),
+      horaEntrega: "10:30",
+      nota: "Con dedicatoria",
+      lineas: [
+        { productoId: queque.id, cantidad: 2 },
+        { productoId: quinoa.id, cantidad: 1 },
+      ],
+      ...extra,
+    });
+  };
+
+  test("anotar un pedido no es venta ni baja el stock; se lista en próximos con total y número", async () => {
+    const harinaAntes = await stockDe("Harina");
+    const ventasAntes = (await api<ListaVentas>("GET", "/ventas")).body.ventas.length;
+    const { status, body } = await nuevoPedido();
+    assert.equal(status, 201);
+    assert.equal(body.estado, "PENDIENTE");
+    assert.equal(body.origen, "MANUAL");
+    assert.ok(body.numero >= 1);
+    const esperado = body.lineas.reduce((t, l) => t.add(D(l.precioUnitario).mul(l.cantidad)), D(0));
+    assert.ok(cerca(body.total, esperado));
+    assert.ok(cerca((await stockDe("Harina")).toString(), harinaAntes));
+    assert.equal((await api<ListaVentas>("GET", "/ventas")).body.ventas.length, ventasAntes);
+    const proximos = (await api<PedidoEntrega[]>("GET", "/pedidos")).body;
+    assert.ok(proximos.some((p) => p.id === body.id));
+    const segundo = await nuevoPedido();
+    assert.equal(segundo.body.numero, body.numero + 1);
+  });
+
+  test("avanza de estado; al entregar se registra la venta, baja el stock y pasa al historial", async () => {
+    const { body: pedido } = await nuevoPedido();
+    const harinaAntes = await stockDe("Harina");
+    const preparando = await api<{ pedido: PedidoEntrega }>("POST", `/pedidos/${pedido.id}/estado`, { estado: "EN_PREPARACION" });
+    assert.equal(preparando.status, 200);
+    assert.equal(preparando.body.pedido.estado, "EN_PREPARACION");
+    assert.ok(cerca((await stockDe("Harina")).toString(), harinaAntes)); // preparar no descuenta
+    const entregado = await api<{ pedido: PedidoEntrega; venta: { pedidoId: string; totalVenta: string } }>(
+      "POST",
+      `/pedidos/${pedido.id}/estado`,
+      { estado: "ENTREGADO" },
+    );
+    assert.equal(entregado.status, 200);
+    assert.equal(entregado.body.pedido.estado, "ENTREGADO");
+    assert.equal(entregado.body.pedido.ventaPedidoId, entregado.body.venta.pedidoId);
+    assert.ok(cerca(entregado.body.venta.totalVenta, pedido.total));
+    assert.ok((await stockDe("Harina")).lt(harinaAntes));
+    const ventas = (await api<ListaVentas>("GET", "/ventas")).body.ventas;
+    assert.ok(ventas.some((v) => (v as unknown as { pedidoId: string }).pedidoId === entregado.body.venta.pedidoId));
+    assert.ok(!(await api<PedidoEntrega[]>("GET", "/pedidos")).body.some((p) => p.id === pedido.id));
+    assert.ok((await api<PedidoEntrega[]>("GET", "/pedidos?vista=historial")).body.some((p) => p.id === pedido.id));
+    // Terminado: no se cambia ni se borra (ya es venta).
+    assert.equal((await api("POST", `/pedidos/${pedido.id}/estado`, { estado: "CANCELADO" })).status, 409);
+    assert.equal((await api("PATCH", `/pedidos/${pedido.id}`, { nota: "x" })).status, 409);
+    assert.equal((await api("DELETE", `/pedidos/${pedido.id}`)).status, 409);
+  });
+
+  test("cancelar guarda el motivo y no toca ventas ni stock; solo se vuelve un paso atrás", async () => {
+    const { body: pedido } = await nuevoPedido();
+    await api("POST", `/pedidos/${pedido.id}/estado`, { estado: "LISTO" });
+    assert.equal((await api("POST", `/pedidos/${pedido.id}/estado`, { estado: "PENDIENTE" })).status, 422);
+    assert.equal((await api("POST", `/pedidos/${pedido.id}/estado`, { estado: "EN_PREPARACION" })).status, 200);
+    const harinaAntes = await stockDe("Harina");
+    const cancelado = await api<{ pedido: PedidoEntrega & { motivoCancelacion: string } }>(
+      "POST",
+      `/pedidos/${pedido.id}/estado`,
+      { estado: "CANCELADO", motivo: "El cliente ya no lo necesita" },
+    );
+    assert.equal(cancelado.status, 200);
+    assert.equal(cancelado.body.pedido.estado, "CANCELADO");
+    assert.equal(cancelado.body.pedido.motivoCancelacion, "El cliente ya no lo necesita");
+    assert.ok(cerca((await stockDe("Harina")).toString(), harinaAntes));
+  });
+
+  test("editar cambia día, nota y productos con su total; borrar un pendiente lo quita", async () => {
+    const { body: pedido } = await nuevoPedido();
+    const queque = await productoPorNombre("Queque");
+    const editado = await api<PedidoEntrega>("PATCH", `/pedidos/${pedido.id}`, {
+      fechaEntrega: diaMas(3),
+      horaEntrega: null,
+      lineas: [{ productoId: queque.id, cantidad: 5 }],
+    });
+    assert.equal(editado.status, 200);
+    assert.equal(editado.body.fechaEntrega, diaMas(3));
+    assert.equal(editado.body.horaEntrega, null);
+    assert.equal(editado.body.lineas.length, 1);
+    assert.ok(cerca(editado.body.total, D(editado.body.lineas[0]!.precioUnitario).mul(5)));
+    assert.equal((await api("DELETE", `/pedidos/${pedido.id}`)).status, 200);
+    assert.equal((await api("GET", `/pedidos/${pedido.id}`)).status, 404);
+  });
+
+  test("valida fecha pasada, hora, productos repetidos y cliente; WhatsApp queda como origen", async () => {
+    const queque = await productoPorNombre("Queque");
+    assert.equal((await nuevoPedido({ fechaEntrega: diaMas(-1) })).status, 400);
+    assert.equal((await nuevoPedido({ horaEntrega: "25:00" })).status, 400);
+    assert.equal(
+      (
+        await nuevoPedido({
+          lineas: [
+            { productoId: queque.id, cantidad: 1 },
+            { productoId: queque.id, cantidad: 2 },
+          ],
+        })
+      ).status,
+      400,
+    );
+    assert.equal((await nuevoPedido({ clienteNombre: undefined })).status, 400);
+    const deWhatsapp = await nuevoPedido({ origen: "WHATSAPP", fechaEntrega: diaMas(0), horaEntrega: undefined });
+    assert.equal(deWhatsapp.status, 201);
+    assert.equal(deWhatsapp.body.origen, "WHATSAPP");
+    assert.equal((await api("GET", "/pedidos/no-es-uuid")).status, 400);
+  });
+});
+
+describe("Entrega y atención humana (D85)", () => {
+  type Atencion = {
+    id: string;
+    celular: string;
+    motivo: string;
+    estado: string;
+    descripcion: string;
+    pedido: { numero: number } | null;
+  };
+  type Pausa = { pausado: boolean; motivos: string[] };
+
+  test("un pedido delivery guarda la ubicación y el envío; el envío no suma al total", async () => {
+    const queque = await productoPorNombre("Queque");
+    const { status, body } = await api<PedidoEntrega & { entrega: string; ubicacion: string; costoEnvio: string | null }>(
+      "POST",
+      "/pedidos",
+      {
+        clienteNombre: "Cliente Delivery",
+        celular: "71112222",
+        fechaEntrega: diaMas(1),
+        entrega: "DELIVERY",
+        ubicacion: "https://maps.app.goo.gl/abc",
+        lineas: [{ productoId: queque.id, cantidad: 1 }],
+        origen: "WHATSAPP",
+      },
+    );
+    assert.equal(status, 201);
+    assert.equal(body.entrega, "DELIVERY");
+    assert.equal(body.ubicacion, "https://maps.app.goo.gl/abc");
+    assert.equal(body.costoEnvio, null);
+    const editado = await api<{ costoEnvio: string; total: string }>("PATCH", `/pedidos/${body.id}`, { costoEnvio: 12 });
+    assert.equal(editado.status, 200);
+    assert.ok(cerca(editado.body.costoEnvio, D(12)));
+    assert.ok(cerca(editado.body.total, D(body.total)));
+    const recojo = await api<{ entrega: string }>("POST", "/pedidos", {
+      clienteNombre: "Cliente Delivery",
+      fechaEntrega: diaMas(1),
+      lineas: [{ productoId: queque.id, cantidad: 1 }],
+    });
+    assert.equal(recojo.body.entrega, "RECOJO");
+  });
+
+  test("pedir atención pausa el chat, no se repite y al devolverlo al agente se reanuda", async () => {
+    const queque = await productoPorNombre("Queque");
+    const pedido = await api<PedidoEntrega>("POST", "/pedidos", {
+      clienteNombre: "Cliente Yango",
+      celular: "73334444",
+      fechaEntrega: diaMas(1),
+      entrega: "DELIVERY",
+      lineas: [{ productoId: queque.id, cantidad: 1 }],
+    });
+    // El agente manda el número con código de país; el cliente quedó sin él.
+    assert.equal((await api<Pausa>("GET", "/atenciones/pausa?celular=59173334444")).body.pausado, false);
+    const creada = await api<Atencion>("POST", "/atenciones", {
+      celular: "59173334444",
+      nombre: "Cliente Yango",
+      motivo: "COTIZAR_DELIVERY",
+      descripcion: "Cotizar delivery (Yango) a su ubicación",
+      pedidoNumero: pedido.body.numero,
+    });
+    assert.equal(creada.status, 201);
+    assert.equal(creada.body.pedido?.numero, pedido.body.numero);
+    const otra = await api<Atencion>("POST", "/atenciones", {
+      celular: "59173334444",
+      motivo: "COTIZAR_DELIVERY",
+      descripcion: "Pregunta otra vez cuánto sale el envío",
+    });
+    assert.equal(otra.status, 200);
+    assert.equal(otra.body.id, creada.body.id);
+    const pausa = (await api<Pausa>("GET", "/atenciones/pausa?celular=59173334444")).body;
+    assert.deepEqual(pausa, { pausado: true, motivos: ["COTIZAR_DELIVERY"] });
+    const pendientes = (await api<Atencion[]>("GET", "/atenciones")).body;
+    assert.ok(pendientes.some((a) => a.id === creada.body.id && a.descripcion.startsWith("Pregunta")));
+
+    const resuelta = await api<{ resueltas: number }>("POST", `/atenciones/${creada.body.id}/resolver`);
+    assert.equal(resuelta.body.resueltas, 1);
+    assert.equal((await api<Pausa>("GET", "/atenciones/pausa?celular=59173334444")).body.pausado, false);
+    assert.equal((await api("POST", `/atenciones/${creada.body.id}/resolver`)).status, 409);
+  });
+
+  test("valida motivo, descripción y número de pedido", async () => {
+    assert.equal((await api("POST", "/atenciones", { celular: "123", motivo: "OTRO", descripcion: "x" })).status, 400);
+    assert.equal((await api("POST", "/atenciones", { celular: "70001111", motivo: "NADA", descripcion: "x" })).status, 400);
+    assert.equal((await api("POST", "/atenciones", { celular: "70001111", motivo: "OTRO", descripcion: " " })).status, 400);
+    assert.equal(
+      (await api("POST", "/atenciones", { celular: "70001111", motivo: "OTRO", descripcion: "x", pedidoNumero: 99999 })).status,
+      404,
+    );
+  });
+});
+
+describe("Pedido sin confirmar del agente (D85)", () => {
+  test("con ?confirmado=no no se anota el pedido", async () => {
+    const queque = await productoPorNombre("Queque");
+    const { status, body } = await api<{ error: string }>("POST", "/pedidos?confirmado=no", {
+      clienteNombre: "Cliente Apurado",
+      celular: "75556666",
+      fechaEntrega: diaMas(1),
+      lineas: [{ productoId: queque.id, cantidad: 1 }],
+    });
+    assert.equal(status, 409);
+    assert.match(body.error, /no confirmó/);
   });
 });

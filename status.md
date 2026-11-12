@@ -390,3 +390,43 @@ Decisión D44. Sin migración (el celular ya existía en `Cliente`).
 
 ## Inicio: Punto de equilibrio junto a Ventas de hoy (D77) — COMPLETADO
 - [x] Los dos bloques en una fila (661 px cada uno a 1640 px de ancho, mismo alto). Verificado en el navegador.
+
+## Agente de pedidos por WhatsApp (D78) — EN VIVO (desde D81 anota en Pedidos)
+- [x] Workflow creado en n8n (carpeta erp-wspp-agent), sin publicar. Lee clientes y catálogo de `host.docker.internal:3000`, conversa con Gemini y registra con `POST /api/ventas/pedido`.
+  - Verificación: conversación simulada de 3 mensajes (pedido → resumen 2 × Brownie personal premium + 1 × Queque Chocolate = Bs 36 → «sí, confirmo») registró el pedido y el cliente nuevo en una **copia** de la base (ERP de prueba en el puerto 3002). Base real intacta (3 ventas, 59 clientes); copia y memoria de prueba borradas.
+- [x] En vivo desde el 2026-11-11: workflow publicado y webhook de Evolution (`ventas_tiktok`) apuntando a `http://n8n:5678/webhook/dulzura-pedidos`. El agente de TikTok ya no recibe mensajes (para volver: apuntar el webhook a `evolution-inbound`). «Vencimientos» de TikTok sigue activo.
+  - Verificación: evento de prueba enviado desde el contenedor de Evolution llegó al webhook de producción (ejecución 64238, sin efectos).
+- [ ] Prueba real desde un celular.
+- [ ] Pendientes: audios e imágenes (hoy pide que escriba), fecha de entrega, pausar el bot cuando la repostera responde a mano.
+
+## Inicio sin Utilidad neta (D79) — COMPLETADO
+- [x] «Caja de hoy» deja solo Ganancia bruta y Gastos del día; sin «Utilidad neta» ni «Utilidad neta del mes». `tsc` OK, `web:build` OK y verificado en el navegador.
+
+## Desempeño con tabla de ventas del período (D80) — COMPLETADO
+- [x] Panel «Ventas · jul 2026 · 11 · Bs 2.256,00» con la tabla del historial (misma función `tablaVentas`). Total igual a «Por producto» de julio. Verificado en el navegador: el pedido se despliega (4 líneas) y Editar abre el formulario; no se guardó nada.
+
+## Pedidos por entregar con ciclo de vida (D81) — COMPLETADO
+- [x] Respaldos `dulzura_2026-11-11_16-29-39` y `16-40-19`. Migración `pedidos` (solo crea `Pedido` y `PedidoLinea`).
+- [x] API `/api/pedidos`: listar (próximos / historial), ver, crear, editar, cambiar estado (ENTREGADO registra la venta), borrar. 5 tests nuevos; 89/89 OK.
+- [x] Pantalla Pedidos (agenda por día, «Para preparar», tarjetas con estado, formulario nuevo/editar, historial), insignia en el menú y recordatorio en el Inicio. Verificado en el navegador: avanzar y deshacer estado, formulario con precio acordado (Eliana, Queque Vainilla Bs 13); no se entregó ningún pedido real.
+- [x] 11 pedidos demo cargados en la base real (`npm run demo:pedidos`; se quitan con `npm run demo:pedidos:borrar`).
+- [x] Agente de WhatsApp anota en Pedidos con día, hora y nota. Probado contra una copia: 3 × Queque Chocolate para el sábado 14 a las 10:00 con «velita» → pedido N.º 12 en la agenda. Versión publicada; copia y memoria de prueba borradas; ventas reales intactas.
+- [ ] Avisar por WhatsApp al cliente cuando su pedido está listo (pendiente).
+
+## Desempeño: semanas del mes con flechas y tabla por mes/día (D82) — COMPLETADO
+- [x] Verificado en el navegador: al entrar, semana 3 de 6 (9–15 nov 2026) y sin tabla; julio → «Semana 1 de 5 · 29 jun – 5 jul 2026» y tabla de julio (11 ventas, Bs 2.256); flecha a la semana 5, tocar Mi 29 → tabla de ese día (Bs 252); tocarlo otra vez → julio; quitar julio → sin tabla. No se guardó nada.
+
+## Tabla de ventas al lado de los gráficos (D83) — COMPLETADO
+- [x] Con julio elegido, «Ventas · jul 2026 · 11 · Bs 2.256,00» ocupa la columna derecha y cabe completa a 1640 px (752 px, sin desliz horizontal); con Sá 4, «Ventas · sábado, 4 de jul de 2026 · 1 · Bs 216,00». Sin mes, vuelve «Por producto». Verificado en el navegador.
+
+## Desempeño abre en la fecha actual (D84) — COMPLETADO
+
+- Al entrar a Desempeño quedan seleccionados el mes y el día actuales: semana de hoy, mes activo y tabla «Ventas · hoy».
+- En años anteriores se elige la misma fecha de ese año (11 nov 2024): mes activo, su semana y la tabla «Historial de ventas». Verificado en el navegador.
+
+## Recojo/delivery, atención humana y menos mensajes (D85) — COMPLETADO
+
+- [x] Migración `entrega_atencion` (respaldo antes): `Pedido.entrega` (RECOJO/DELIVERY), `ubicacion`, `costoEnvio`; modelo `Atencion` con motivo, descripción y estado.
+- [x] API `/api/atenciones` (listar, pausa por celular, crear sin repetir, resolver = devolver al agente) y `?confirmado=no` en `POST /api/pedidos`. 93/93 tests.
+- [x] Pantalla **Atención** (insignia en el menú, «Abrir chat», «Listo, devolver al agente») y entrega/ubicación/envío en las tarjetas y el formulario de Pedidos.
+- [x] Agente n8n publicado: bienvenida y menú fijos, mensajes juntos (12 s), ubicación compartida → enlace de Maps, `pedir_atencion`, pausa por atención o porque escribió la dueña, candado de confirmación. Probado contra una copia (3002); la copia y la memoria de prueba se borraron. Datos reales intactos.

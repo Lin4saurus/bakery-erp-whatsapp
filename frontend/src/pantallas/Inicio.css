@@ -184,37 +184,6 @@
   }
 }
 
-/* Utilidad neta: la línea del día se resalta y el mes va al pie de la tarjeta Caja. */
-.inicio-card__lista .inicio-card__neta dt {
-  color: var(--color-text);
-  font-weight: 600;
-}
-
-.inicio-card__mes {
-  margin-top: 10px;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-muted);
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 2px var(--space-1);
-  font-size: 13px;
-}
-
-.inicio-card__mes span:first-child {
-  color: var(--color-text-secondary);
-}
-
-.inicio-card__mes strong {
-  font-variant-numeric: tabular-nums;
-}
-
-.inicio-card__mes-detalle {
-  grid-column: 1 / -1;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-}
-
 /* Segunda fila: punto de equilibrio y top clientes mayoristas. */
 .inicio__indicadores {
   display: grid;
@@ -262,4 +231,65 @@
 .inicio-alertas__acciones .boton {
   font-size: 12px;
   padding: 3px 8px;
+}
+
+/* Recordatorio de pedidos por entregar (D81). */
+.inicio-pedidos__titulo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inicio-pedidos__resumen {
+  margin: 0 0 8px;
+}
+
+.inicio-pedidos__preparar {
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-soft);
+  font-size: 13px;
+}
+
+.inicio-pedidos__lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.inicio-pedidos__lista li {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid var(--color-border);
+  font-size: 14px;
+}
+
+.inicio-pedidos__cuando {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.inicio-pedidos__atrasado .inicio-pedidos__cuando {
+  color: var(--color-error);
+}
+
+.inicio-pedidos__quien {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .inicio-pedidos__lista li {
+    grid-template-columns: 1fr auto;
+  }
+
+  .inicio-pedidos__quien {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
 }

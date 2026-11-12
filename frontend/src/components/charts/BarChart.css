@@ -77,3 +77,12 @@
   outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
+
+/* Barras de otro mes en la semana de Desempeño (D82). */
+.bar-chart__columna--apagada {
+  opacity: 0.35;
+}
+
+.bar-chart__etiqueta--apagada {
+  opacity: 0.5;
+}

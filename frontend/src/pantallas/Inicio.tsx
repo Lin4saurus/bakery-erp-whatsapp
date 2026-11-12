@@ -9,7 +9,8 @@ import {
   MdOutlineWarningAmber,
   MdRefresh,
 } from "react-icons/md";
-import { api, type Venta } from "../api";
+import { api, type Pedido, type Venta } from "../api";
+import { claseEstado, diaMas, nombreDia, nombreEstado, paraPreparar, urgentes } from "../pedidos";
 import { BarChart, type Barra } from "../components/charts/BarChart";
 import { PuntoEquilibrioCard } from "../components/dashboard/PuntoEquilibrioCard";
 import { GASTOS_FIJOS_MENSUALES, puntoDeEquilibrio } from "../components/dashboard/indicadores";
@@ -63,6 +64,7 @@ export function Inicio() {
   const inicioMes = inicioDeMesISO();
   const ventasMes = useDatos(() => api.ventas(inicioMes, hoy), [inicioMes, hoy]);
   const gastosMes = useDatos(() => api.gastos(inicioMes, hoy), [inicioMes, hoy]);
+  const pedidos = useDatos(() => api.pedidos("proximos"));
 
   const recargarTodo = () => {
     void semana.recargar();
@@ -71,6 +73,7 @@ export function Inicio() {
     void insumos.recargar();
     void ventasMes.recargar();
     void gastosMes.recargar();
+    void pedidos.recargar();
   };
 
   // Las anuladas no cuentan en ningún total ni en la tendencia.
@@ -82,16 +85,12 @@ export function Inicio() {
   const gananciaDia = sumar("gananciaBruta");
   const unidadesDia = sumar("cantidad");
 
-  // Utilidad neta = ganancia bruta − gastos operativos del período (pantalla Gastos).
+  // Gastos operativos del día (pantalla Gastos). Sin «Utilidad neta» en el Inicio (D79).
   const gastosDia =
     gastosMes.datos?.gastos
       // La compra de insumos ya se descuenta como costo de producción al vender (D51).
       .filter((g) => g.categoria !== "INSUMOS" && isoLocal(new Date(g.fecha)) === hoy)
       .reduce((t, g) => t + Number(g.monto), 0) ?? 0;
-  const netaDia = gananciaDia - gastosDia;
-  const gananciaMes = Number(ventasMes.datos?.resumen.gananciaBruta ?? 0);
-  const gastosDelMes = Number(gastosMes.datos?.totalOperativo ?? 0);
-  const netaMes = gananciaMes - gastosDelMes;
   const tono = (valor: number) => (valor < 0 ? "negativo" : valor > 0 ? "positivo" : undefined);
 
   const equilibrio = puntoDeEquilibrio(ventasMes.datos?.ventas ?? [], productos.datos ?? [], GASTOS_FIJOS_MENSUALES);
@@ -154,6 +153,8 @@ export function Inicio() {
       )}
       {semana.error && <Aviso tipo="error">{semana.error}</Aviso>}
 
+      {pedidos.datos && <ProximosPedidos pedidos={pedidos.datos} hoy={hoy} />}
+
       <div className="inicio__tarjetas">
         <section className="inicio-card">
           <header className="inicio-card__cabecera">
@@ -179,18 +180,7 @@ export function Inicio() {
               </dt>
               <dd>{gastosDia > 0 ? `− ${bs(gastosDia)}` : bs(0)}</dd>
             </div>
-            <div className="inicio-card__neta">
-              <dt>Utilidad neta</dt>
-              <dd className={tono(netaDia)}>{bs(netaDia)}</dd>
-            </div>
           </dl>
-          <div className="inicio-card__mes">
-            <span>Utilidad neta del mes</span>
-            <strong className={tono(netaMes)}>{bs(netaMes)}</strong>
-            <span className="inicio-card__mes-detalle">
-              Ganancia {bs(gananciaMes)} − gastos {bs(gastosDelMes)}
-            </span>
-          </div>
         </section>
 
         <section className="inicio-card">
@@ -319,5 +309,63 @@ export function Inicio() {
         </Panel>
       </div>
     </div>
+  );
+}
+
+// Recordatorio de pedidos (D81): atrasados, hoy y mañana, con lo que hay que preparar.
+function ProximosPedidos({ pedidos, hoy }: { pedidos: Pedido[]; hoy: string }) {
+  const manana = diaMas(hoy, 1);
+  const cercanos = pedidos.filter((p) => p.fechaEntrega <= manana);
+  const { atrasados, deHoy, deManana } = urgentes(pedidos, hoy);
+  const preparar = paraPreparar(pedidos.filter((p) => p.fechaEntrega <= hoy));
+  const resumen =
+    cercanos.length === 0
+      ? pedidos.length === 0
+        ? "No hay pedidos por entregar."
+        : `Nada para hoy ni mañana · ${pedidos.length} pedido(s) más adelante.`
+      : [atrasados > 0 ? `${atrasados} atrasado(s)` : null, `${deHoy} para hoy`, `${deManana} para mañana`]
+          .filter(Boolean)
+          .join(" · ");
+  return (
+    <Panel
+      titulo={
+        <span className="inicio-pedidos__titulo">
+          Pedidos por entregar
+          {atrasados > 0 && <span className="etiqueta etiqueta-negativa">{atrasados} atrasado(s)</span>}
+        </span>
+      }
+      acciones={
+        <a href="#pedidos" className="inicio-card__enlace">
+          Ver todos <MdOutlineChevronRight aria-hidden />
+        </a>
+      }
+    >
+      <div className="panel-cuerpo inicio-pedidos">
+        <p className="secundario inicio-pedidos__resumen">{resumen}</p>
+        {preparar.length > 0 && (
+          <p className="inicio-pedidos__preparar">
+            <strong>Para preparar hoy:</strong> {preparar.map((p) => `${cantidad(p.unidades)} × ${p.producto}`).join(" · ")}
+          </p>
+        )}
+        {cercanos.length > 0 && (
+          <ul className="inicio-pedidos__lista">
+            {cercanos.slice(0, 6).map((p) => (
+              <li key={p.id} className={p.fechaEntrega < hoy ? "inicio-pedidos__atrasado" : undefined}>
+                <span className="inicio-pedidos__cuando">
+                  {nombreDia(p.fechaEntrega, hoy)}
+                  {p.horaEntrega ? ` ${p.horaEntrega}` : ""}
+                </span>
+                <span className="inicio-pedidos__quien">
+                  <strong>{p.cliente.nombre}</strong>{" "}
+                  <span className="secundario">{p.lineas.map((l) => `${cantidad(l.cantidad)} × ${l.producto}`).join(", ")}</span>
+                </span>
+                <span className={`etiqueta ${claseEstado[p.estado]}`}>{nombreEstado[p.estado]}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {cercanos.length > 6 && <p className="secundario">y {cercanos.length - 6} más…</p>}
+      </div>
+    </Panel>
   );
 }

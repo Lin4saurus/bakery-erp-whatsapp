@@ -1,0 +1,358 @@
+/* Pedidos por entregar (D81): agenda por día con tarjetas de pedido. */
+
+.pedidos__pestanas {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.pedidos__pestana {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 12px;
+  margin-bottom: -1px;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.pedidos__pestana:hover {
+  color: var(--color-text);
+}
+
+.pedidos__pestana--activa {
+  color: var(--color-text);
+  border-bottom-color: var(--color-primary);
+}
+
+.pedidos__cuenta {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 6px;
+  margin-left: 4px;
+  border-radius: 10px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Un día */
+.pedidos__dia {
+  margin-bottom: var(--space-4, 32px);
+}
+
+.pedidos__dia-cabecera {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-bottom: 6px;
+  margin-bottom: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.pedidos__dia-cabecera h2 {
+  display: inline;
+  margin: 0 var(--space-1) 0 0;
+  font-size: 18px;
+}
+
+.pedidos__dia-cabecera .secundario::first-letter {
+  text-transform: uppercase;
+}
+
+.pedidos__dia--atrasado .pedidos__dia-cabecera h2 {
+  color: var(--color-error);
+}
+
+.pedidos__dia-total {
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pedidos__preparar {
+  margin: 0 0 var(--space-2);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-soft);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.pedidos__preparar-item {
+  white-space: nowrap;
+}
+
+.pedidos__tarjetas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: var(--space-2);
+}
+
+/* Tarjeta de un pedido: la franja izquierda dice el estado de un vistazo. */
+.pedido {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.pedido--en_preparacion {
+  border-left-color: var(--color-warning);
+}
+
+.pedido--listo {
+  border-left-color: var(--color-info);
+}
+
+.pedido--atrasado {
+  border-left-color: var(--color-error);
+}
+
+.pedido__cabecera {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.pedido__numero {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.pedido__hora {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-right: auto;
+}
+
+.pedido__cliente {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.pedido__cliente .secundario {
+  flex-basis: 100%;
+}
+
+.pedido__whatsapp {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.pedido__lineas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+}
+
+.pedido__lineas li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-1);
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--color-border);
+}
+
+.pedido__lineas .num {
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pedido__nota {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.pedido__total {
+  display: flex;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+
+.pedido__total strong {
+  font-size: 17px;
+}
+
+.pedido__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.pedido__acciones-secundarias {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.pedido__confirmar {
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+}
+
+.pedido__confirmar p {
+  margin: 0 0 var(--space-1);
+  font-size: 14px;
+}
+
+/* Historial */
+.pedidos__cancelado td {
+  color: var(--color-text-secondary);
+}
+
+.pedidos__icono-wa {
+  margin-left: 4px;
+  vertical-align: -2px;
+  color: var(--color-success);
+}
+
+/* Formulario */
+.pedido-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 16px 20px 20px;
+  min-width: min(600px, 100%);
+}
+
+.pedido-form__fila {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-2);
+}
+
+.pedido-form__detalle {
+  margin: -8px 0 0;
+  font-size: 13px;
+}
+
+.pedido-form__productos {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.pedido-form__linea {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 96px auto;
+  gap: var(--space-1);
+  align-items: center;
+  width: 100%;
+}
+
+.pedido-form__cantidad {
+  text-align: right;
+}
+
+.pedido-form__subtotal {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.pedido-form__total {
+  display: flex;
+  justify-content: space-between;
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--color-border);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 600px) {
+  .pedido-form__linea {
+    grid-template-columns: minmax(0, 1fr) 64px auto;
+  }
+
+  .pedido-form__subtotal {
+    display: none;
+  }
+}
+
+/* Recojo o delivery (D85). */
+.pedido__entrega {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.pedido__entrega svg {
+  font-size: 17px;
+}
+
+.pedido__entrega--delivery {
+  color: var(--color-text);
+}
+
+.pedido__entrega a {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.pedido-form__entrega {
+  display: grid;
+  gap: 6px;
+}
+
+.pedido-form__opciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.pedido-form__opcion {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pedido-form__opcion svg {
+  font-size: 18px;
+}
+
+.pedido-form__opcion--activa {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
+}

@@ -9,6 +9,20 @@
         "dev"
       ],
       "port": 3000
+    },
+    {
+      "name": "erp-prueba",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "tsx",
+        "backend/src/server.ts"
+      ],
+      "env": {
+        "PORT": "3002",
+        "DATABASE_URL": "file:./prueba-agente.db",
+        "BACKUP_AUTO": "false"
+      },
+      "port": 3002
     }
   ]
 }

@@ -8,6 +8,8 @@ import { backupsRouter } from "./routes/backups";
 import { historicoRouter } from "./routes/historico";
 import { gastosRouter } from "./routes/gastos";
 import { clientesRouter } from "./routes/clientes";
+import { pedidosRouter } from "./routes/pedidos";
+import { atencionesRouter } from "./routes/atenciones";
 import { errorHandler, notFoundHandler } from "./errors";
 
 // Frontend compilado (`npm run web:build`). En desarrollo lo sirve Vite.
@@ -27,6 +29,8 @@ export function createApp(): Express {
   app.use("/api/historico", historicoRouter);
   app.use("/api/gastos", gastosRouter);
   app.use("/api/clientes", clientesRouter);
+  app.use("/api/pedidos", pedidosRouter);
+  app.use("/api/atenciones", atencionesRouter);
 
   if (existsSync(FRONTEND_DIST)) {
     // index.html se revisa siempre, para que una versión nueva se vea al recargar;

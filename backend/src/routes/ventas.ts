@@ -45,7 +45,8 @@ const ventaSchema = z
     }
   });
 
-const faltaDato = (campo: string, mensaje: string) => new z.ZodError([{ code: z.ZodIssueCode.custom, path: [campo], message: mensaje }]);
+const faltaDato = (campo: string, mensaje: string) =>
+  new z.ZodError([{ code: z.ZodIssueCode.custom, path: [campo], message: mensaje }]);
 
 const filtrosSchema = z.object({ desde: fechaDia, hasta: fechaDia });
 
@@ -72,7 +73,10 @@ const rangoFechas = (desde?: string, hasta?: string): Prisma.DateTimeFilter => {
   return fecha;
 };
 
-const conCliente = { producto: { select: { nombre: true, categoria: true } }, clienteRegistrado: { select: { id: true, nombre: true, tipo: true } } };
+const conCliente = {
+  producto: { select: { nombre: true, categoria: true } },
+  clienteRegistrado: { select: { id: true, nombre: true, tipo: true } },
+};
 
 type VentaConCliente = Prisma.VentaGetPayload<{ include: typeof conCliente }>;
 const plana = ({ producto, clienteRegistrado, ...venta }: VentaConCliente) => ({
@@ -96,7 +100,7 @@ const fechaParaGuardar = (fecha?: string) => {
 };
 
 // Cliente: el elegido, uno con el mismo nombre (sin importar mayúsculas ni tildes) o uno nuevo (D44).
-async function resolverCliente(
+export async function resolverCliente(
   tx: Tx,
   {
     clienteId,
@@ -123,7 +127,7 @@ async function resolverCliente(
   return { ficha, clienteNuevo };
 }
 
-async function productoVendible(tx: Tx, productoId: number): Promise<ProductoVendible> {
+export async function productoVendible(tx: Tx, productoId: number): Promise<ProductoVendible> {
   const producto = await tx.producto.findUnique({ where: { id: productoId } });
   if (!producto || producto.eliminado) throw new AppError(404, `No existe el producto ${productoId}.`);
   if (producto.tipo !== TipoProducto.VENTA) {
@@ -183,7 +187,9 @@ async function registrarLinea(
   });
 
   const consumo = await explotarInsumos(tx, producto.id, cantidad);
-  const sinControl = new Set((await tx.insumo.findMany({ where: { controlaStock: false }, select: { id: true } })).map((i) => i.id));
+  const sinControl = new Set(
+    (await tx.insumo.findMany({ where: { controlaStock: false }, select: { id: true } })).map((i) => i.id),
+  );
   const lineas = [];
   const alertas: AlertaStock[] = [];
   for (const [insumoId, usado] of consumo) {
@@ -242,13 +248,24 @@ const pedidoSchema = z
     }
     const ids = pedido.lineas.map((l) => l.productoId);
     if (new Set(ids).size !== ids.length) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Un producto aparece dos veces: suma las cantidades.", path: ["lineas"] });
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Un producto aparece dos veces: suma las cantidades.",
+        path: ["lineas"],
+      });
     }
   });
 
 ventasRouter.post("/pedido", async (req, res) => {
-  const { lineas, clienteId, clienteNombre, clienteTipo, celular, fecha } = pedidoSchema.parse(req.body);
-  const resultado = await prisma.$transaction(async (tx) => {
+  const datos = pedidoSchema.parse(req.body);
+  const resultado = await prisma.$transaction((tx) => registrarPedidoVenta(tx, datos));
+  res.status(201).json(resultado);
+});
+
+// Registra un pedido como venta (Caja, o un Pedido que se entrega: D81). Todo dentro de la transacción recibida.
+export async function registrarPedidoVenta(tx: Tx, datos: z.infer<typeof pedidoSchema>) {
+  const { lineas, clienteId, clienteNombre, clienteTipo, celular, fecha } = datos;
+  {
     const { ficha, clienteNuevo } = await resolverCliente(tx, { clienteId, clienteNombre, celular, clienteTipo });
     const pedidoId = randomUUID();
     const ventas = [];
@@ -279,9 +296,8 @@ ventasRouter.post("/pedido", async (req, res) => {
       gananciaBruta: ventas.reduce((t, v) => t.add(v.gananciaBruta), cero),
       alertas: [...alertas.values()],
     };
-  });
-  res.status(201).json(resultado);
-});
+  }
+}
 
 // Sin fiados (D74): toda venta se cobra al momento; no hay «por cobrar» ni «cobrar».
 
@@ -337,10 +353,21 @@ ventasRouter.get("/reporte-clientes", async (req, res) => {
       _sum: { valor: true, cantidad: true },
     }),
     prisma.venta.groupBy({ by: ["clienteId"], where: { anulada: false, clienteId: { not: null } }, _max: { fecha: true } }),
-    prisma.ventaHistorica.groupBy({ by: ["clienteId"], where: { clienteId: { not: null }, eliminada: false }, _max: { fecha: true } }),
-    prisma.venta.findMany({ where: { fecha, anulada: false, clienteId: { not: null } }, select: { id: true, clienteId: true, pedidoId: true } }),
+    prisma.ventaHistorica.groupBy({
+      by: ["clienteId"],
+      where: { clienteId: { not: null }, eliminada: false },
+      _max: { fecha: true },
+    }),
+    prisma.venta.findMany({
+      where: { fecha, anulada: false, clienteId: { not: null } },
+      select: { id: true, clienteId: true, pedidoId: true },
+    }),
     // Una nota de varios sabores son varias líneas (D57): el pedido se cuenta por su primera línea.
-    prisma.ventaHistorica.groupBy({ by: ["clienteId"], where: { fecha, clienteId: { not: null }, eliminada: false, linea: 0 }, _count: true }),
+    prisma.ventaHistorica.groupBy({
+      by: ["clienteId"],
+      where: { fecha, clienteId: { not: null }, eliminada: false, linea: 0 },
+      _count: true,
+    }),
   ]);
   // Un pedido de varios productos cuenta como un pedido (D48); las ventas sueltas anteriores, una cada una.
   const pedidosPorCliente = new Map<string, Set<string>>();
@@ -354,7 +381,10 @@ ventasRouter.get("/reporte-clientes", async (req, res) => {
   const reporte = clientes.map((c) => {
     const v = ventas.find((x) => x.clienteId === c.id);
     const h = historicas.find((x) => x.clienteId === c.id);
-    const fechas = [ultimas.find((x) => x.clienteId === c.id)?._max.fecha, ultimasHistoricas.find((x) => x.clienteId === c.id)?._max.fecha]
+    const fechas = [
+      ultimas.find((x) => x.clienteId === c.id)?._max.fecha,
+      ultimasHistoricas.find((x) => x.clienteId === c.id)?._max.fecha,
+    ]
       .filter((f): f is Date => f instanceof Date)
       .sort((a, b) => b.getTime() - a.getTime());
     return {
@@ -477,7 +507,9 @@ ventasRouter.patch("/:id", async (req, res) => {
       const neto = netoPorInsumo(venta.movimientos);
       const insumos = new Set([...neto.keys(), ...[...consumo.keys()].filter((i) => !sinControl.has(i))]);
       for (const insumoId of insumos) {
-        const objetivo = sinControl.has(insumoId) ? new Prisma.Decimal(0) : (consumo.get(insumoId) ?? new Prisma.Decimal(0)).neg();
+        const objetivo = sinControl.has(insumoId)
+          ? new Prisma.Decimal(0)
+          : (consumo.get(insumoId) ?? new Prisma.Decimal(0)).neg();
         const diferencia = objetivo.sub(neto.get(insumoId) ?? 0);
         if (diferencia.isZero()) continue;
         await registrarMovimiento(tx, {
@@ -504,8 +536,11 @@ ventasRouter.patch("/:id", async (req, res) => {
 
 // Elimina una venta (pedido cancelado o cargado por error, D43). Si no estaba anulada, primero devuelve
 // al stock lo descontado. Los movimientos quedan en la bitácora del inventario, sin la venta.
-async function eliminarVenta(tx: Tx, id: number) {
-  const venta = await tx.venta.findUnique({ where: { id }, include: { movimientos: true, producto: { select: { nombre: true } } } });
+export async function eliminarVenta(tx: Tx, id: number) {
+  const venta = await tx.venta.findUnique({
+    where: { id },
+    include: { movimientos: true, producto: { select: { nombre: true } } },
+  });
   if (!venta) throw new AppError(404, `No existe la venta ${id}.`);
   if (!venta.anulada) {
     for (const [insumoId, neto] of netoPorInsumo(venta.movimientos)) {
@@ -539,4 +574,3 @@ ventasRouter.delete("/:id", async (req, res) => {
   await prisma.$transaction((tx) => eliminarVenta(tx, id));
   res.json({ eliminada: id });
 });
-

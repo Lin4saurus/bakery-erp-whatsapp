@@ -347,6 +347,32 @@
 2. Gráfico semanal minoristas vs. mayoristas (Tarea 5.4, «reportes futuros»).
 3. Instalador `.exe`.
 
+## 2026-11-11 — Agente de pedidos por WhatsApp (D78)
+**Hecho**
+- Workflow n8n «ERP Dulzura - Agente de pedidos (WhatsApp)» (carpeta erp-wspp-agent): Evolution → Gemini con catálogo y clientes del ERP → resumen y confirmación → `POST /api/ventas/pedido`. Probado de punta a punta contra una copia de la base; datos reales intactos.
+
+**Próximos pasos sugeridos**
+1. Ponerlo en vivo (publicar + webhook de Evolution a `dulzura-pedidos`) y probar desde un celular.
+2. Audios/imágenes, fecha de entrega y pausa del bot cuando responde la repostera.
+
+## 2026-11-11 — Pedidos por entregar (D81)
+**Hecho**
+- Ciclo de vida del pedido (Pendiente → En preparación → Listo → Entregado / Cancelado); la venta y el stock se registran al entregar. Pantalla Pedidos tipo agenda, insignia en el menú, recordatorio en el Inicio, 11 pedidos demo y el agente de WhatsApp anotando con día de entrega. 89/89 tests.
+
+**Próximos pasos sugeridos**
+1. Avisar por WhatsApp al cliente cuando su pedido pasa a «Listo».
+2. Login, roles y clave para la API (seguridad para la defensa).
+3. Reportes en PDF/Excel y cierre de caja.
+
+## 2026-11-12 — Recojo/delivery, atención humana y menos mensajes (D85)
+**Hecho**
+- Pedidos con recojo o delivery (ubicación de Maps y envío por cotizar). Pantalla «Atención» para lo que le toca a la dueña (cotizar Yango, personalizados, reclamos), que pausa al agente en ese chat hasta «Listo».
+- Agente más barato: bienvenida y menú sin IA, mensajes seguidos juntos, todo lo que falta en una sola pregunta y candado para no anotar sin «sí». 93/93 tests; probado en una copia y publicado.
+
+**Próximos pasos sugeridos**
+1. Avisar por WhatsApp al cliente cuando su pedido pasa a «Listo».
+2. Login, roles y clave para la API.
+
 ## Plan anterior (cumplido)
 1. `package.json` del backend con Prisma + TypeScript.
 2. `seed.ts` con insumos, rellenos y 5 queques.

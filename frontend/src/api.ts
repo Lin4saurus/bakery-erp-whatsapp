@@ -182,7 +182,6 @@ export interface ListaRespaldos {
   respaldos: Respaldo[];
 }
 
-
 // Ventas de 2024 importadas del Excel (solo consulta). Costo y utilidad son los del Excel.
 export interface VentaHistorica {
   id: number;
@@ -278,6 +277,78 @@ export interface ReporteCliente {
   ultimoPedido: string | null;
 }
 
+// ---------- Pedidos por entregar (D81) ----------
+export type EstadoPedido = "PENDIENTE" | "EN_PREPARACION" | "LISTO" | "ENTREGADO" | "CANCELADO";
+export type OrigenPedido = "MANUAL" | "WHATSAPP";
+export type TipoEntrega = "RECOJO" | "DELIVERY"; // D85
+
+export interface LineaPedido {
+  id: number;
+  productoId: number;
+  producto: string;
+  familia: string | null;
+  cantidad: string;
+  precioUnitario: string;
+  subtotal: string;
+}
+
+export interface Pedido {
+  id: string;
+  numero: number;
+  cliente: { id: string; nombre: string; tipo: TipoCliente; celular: string | null };
+  fechaEntrega: string; // AAAA-MM-DD
+  horaEntrega: string | null; // HH:MM
+  estado: EstadoPedido;
+  origen: OrigenPedido;
+  nota: string | null;
+  entrega: TipoEntrega;
+  ubicacion: string | null; // enlace de Google Maps o dirección
+  costoEnvio: string | null; // Bs del delivery (lo paga el cliente; no suma al total)
+  total: string;
+  unidades: string;
+  esDemo: boolean;
+  ventaPedidoId: string | null;
+  entregadoEn: string | null;
+  canceladoEn: string | null;
+  motivoCancelacion: string | null;
+  createdAt: string;
+  lineas: LineaPedido[];
+}
+
+export interface DatosPedido {
+  lineas: { productoId: number; cantidad: string }[];
+  fechaEntrega: string;
+  horaEntrega?: string | null;
+  nota?: string | null;
+  entrega?: TipoEntrega;
+  ubicacion?: string | null;
+  costoEnvio?: string | null;
+}
+
+// ---------- Atención humana (D85) ----------
+export type MotivoAtencion = "COTIZAR_DELIVERY" | "PEDIDO_PERSONALIZADO" | "RECLAMO" | "DUENA_RESPONDIO" | "OTRO";
+
+export interface Atencion {
+  id: string;
+  celular: string;
+  nombre: string | null;
+  motivo: MotivoAtencion;
+  descripcion: string;
+  estado: "PENDIENTE" | "RESUELTA";
+  resueltaEn: string | null;
+  createdAt: string;
+  updatedAt: string;
+  cliente: { id: string; nombre: string; celular: string | null } | null;
+  pedido: {
+    id: string;
+    numero: number;
+    fechaEntrega: string;
+    horaEntrega: string | null;
+    entrega: TipoEntrega;
+    ubicacion: string | null;
+  } | null;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -360,8 +431,7 @@ export const api = {
     clienteNombre?: string; // sin clienteId: se busca por nombre o se crea (minorista)
     celular?: string; // obligatorio para un cliente nuevo o uno que aún no tiene celular
     fecha?: string; // AAAA-MM-DD; para cargar una venta de un día anterior
-  }) =>
-    pedir<VentaCreada>("POST", "/ventas", venta),
+  }) => pedir<VentaCreada>("POST", "/ventas", venta),
   crearPedido: (pedido: {
     lineas: { productoId: number; cantidad: string; precioUnitario?: string }[];
     clienteId?: string;
@@ -378,10 +448,8 @@ export const api = {
     pedir<Venta>("PATCH", `/ventas/${id}`, datos),
   eliminarVenta: (id: number) => pedir<{ eliminada: number }>("DELETE", `/ventas/${id}`),
   eliminarPedido: (pedidoId: string) => pedir<{ eliminadas: number }>("DELETE", `/ventas/pedidos/${pedidoId}`),
-  editarHistorico: (
-    id: number,
-    datos: { fecha?: string; cantidad?: string; valor?: string },
-  ) => pedir<VentaHistorica>("PATCH", `/historico/${id}`, datos),
+  editarHistorico: (id: number, datos: { fecha?: string; cantidad?: string; valor?: string }) =>
+    pedir<VentaHistorica>("PATCH", `/historico/${id}`, datos),
   eliminarHistorico: (id: number) => pedir<{ eliminada: number }>("DELETE", `/historico/${id}`),
   eliminarPedidoHistorico: (id: number) => pedir<{ eliminadas: number }>("DELETE", `/historico/${id}/pedido`),
   historico: (desde?: string, hasta?: string) =>
@@ -396,9 +464,19 @@ export const api = {
     envases?: string;
     cantidad?: string;
     actualizarPrecio?: boolean;
-  }) =>
-    pedir<Gasto>("POST", "/gastos", gasto),
+  }) => pedir<Gasto>("POST", "/gastos", gasto),
   borrarGasto: (id: string) => pedir<void>("DELETE", `/gastos/${id}`),
+
+  pedidos: (vista: "proximos" | "historial" = "proximos") => pedir<Pedido[]>("GET", `/pedidos?vista=${vista}`),
+  crearPedidoEntrega: (
+    pedido: DatosPedido & { clienteId?: string; clienteNombre?: string; clienteTipo?: TipoCliente; celular?: string },
+  ) => pedir<Pedido & { clienteNuevo: boolean }>("POST", "/pedidos", pedido),
+  editarPedidoEntrega: (id: string, datos: Partial<DatosPedido>) => pedir<Pedido>("PATCH", `/pedidos/${id}`, datos),
+  cambiarEstadoPedido: (id: string, estado: EstadoPedido, motivo?: string) =>
+    pedir<{ pedido: Pedido; venta: PedidoCreado | null }>("POST", `/pedidos/${id}/estado`, { estado, motivo }),
+  borrarPedidoEntrega: (id: string) => pedir<{ eliminado: string }>("DELETE", `/pedidos/${id}`),
+  atenciones: (estado: "PENDIENTE" | "RESUELTA" = "PENDIENTE") => pedir<Atencion[]>("GET", `/atenciones?estado=${estado}`),
+  resolverAtencion: (id: string) => pedir<{ resueltas: number }>("POST", `/atenciones/${id}/resolver`),
 
   clientes: (filtro: { tipo?: TipoCliente } = {}) => {
     const params = new URLSearchParams();
@@ -407,8 +485,7 @@ export const api = {
     return pedir<Cliente[]>("GET", `/clientes${query ? `?${query}` : ""}`);
   },
   crearCliente: (datos: DatosCliente) => pedir<Cliente>("POST", "/clientes", datos),
-  actualizarCliente: (id: string, datos: Partial<DatosCliente>) =>
-    pedir<Cliente>("PATCH", `/clientes/${id}`, datos),
+  actualizarCliente: (id: string, datos: Partial<DatosCliente>) => pedir<Cliente>("PATCH", `/clientes/${id}`, datos),
   fijarPrecioCliente: (clienteId: string, productoId: number, precio: string) =>
     pedir<Cliente>("PUT", `/clientes/${clienteId}/precios/${productoId}`, { precio }),
   quitarPrecioCliente: (clienteId: string, productoId: number) =>

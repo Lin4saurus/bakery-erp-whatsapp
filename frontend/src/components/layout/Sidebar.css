@@ -213,6 +213,32 @@
   }
 }
 
+/* Insignia de pedidos por atender (D81); con el menú colapsado queda sobre el ícono. */
+.sidebar__insignia {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--color-error);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+}
+
+@media (min-width: 1001px) {
+  .sidebar--colapsado .sidebar__insignia {
+    position: absolute;
+    top: 2px;
+    right: 8px;
+    min-width: 16px;
+    padding: 0 4px;
+    font-size: 11px;
+    line-height: 16px;
+  }
+}
+
 @media (max-width: 1000px) {
   .sidebar__colapsar {
     display: none;

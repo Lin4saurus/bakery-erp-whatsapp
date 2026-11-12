@@ -4,6 +4,7 @@ export interface Barra {
   etiqueta: string;
   valor: number;
   destacada?: boolean;
+  apagada?: boolean; // se ve tenue y no se puede tocar (ej. días de otro mes, D82)
 }
 
 // Barras en HTML/CSS: se adaptan al ancho de la tarjeta sin achicar el texto.
@@ -35,7 +36,7 @@ export function BarChart({
               />
             </>
           );
-          return alElegir ? (
+          return alElegir && !d.apagada ? (
             <button
               key={d.etiqueta + i}
               type="button"
@@ -47,7 +48,7 @@ export function BarChart({
               {contenido}
             </button>
           ) : (
-            <div key={d.etiqueta + i} className="bar-chart__columna">
+            <div key={d.etiqueta + i} className={`bar-chart__columna ${d.apagada ? "bar-chart__columna--apagada" : ""}`}>
               {contenido}
             </div>
           );
@@ -55,7 +56,10 @@ export function BarChart({
       </div>
       <div className="bar-chart__etiquetas">
         {datos.map((d, i) => (
-          <span key={d.etiqueta + i} className={d.destacada ? "bar-chart__etiqueta--destacada" : undefined}>
+          <span
+            key={d.etiqueta + i}
+            className={d.destacada ? "bar-chart__etiqueta--destacada" : d.apagada ? "bar-chart__etiqueta--apagada" : undefined}
+          >
             {d.etiqueta}
           </span>
         ))}
