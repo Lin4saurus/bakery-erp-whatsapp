@@ -108,6 +108,7 @@ export async function resolverCliente(
     celular,
     clienteTipo,
   }: { clienteId?: string; clienteNombre?: string; celular?: string; clienteTipo?: TipoCliente },
+  exigirCelular = true, // solo los pedidos demo (clientes del Excel sin celular) lo apagan
 ) {
   let ficha = clienteId
     ? await tx.cliente.findUnique({ where: { id: clienteId } })
@@ -123,7 +124,7 @@ export async function resolverCliente(
     clienteNuevo = true;
   }
   if (celular && celular !== ficha.celular) ficha = await tx.cliente.update({ where: { id: ficha.id }, data: { celular } });
-  if (!ficha.celular) throw faltaDato("celular", `Falta el celular de "${ficha.nombre}".`);
+  if (!ficha.celular && exigirCelular) throw faltaDato("celular", `Falta el celular de "${ficha.nombre}".`);
   return { ficha, clienteNuevo };
 }
 
@@ -140,6 +141,7 @@ export async function productoVendible(tx: Tx, productoId: number): Promise<Prod
 
 // Una línea de venta: foto del costo actual, venta con ganancia y descuento de insumos (incluidas sub-recetas).
 // Si un insumo no alcanza, la venta igual se registra y se devuelve una alerta.
+// Un pedido que se paga antes de prepararse (D87) registra la venta sin descontar: los insumos bajan al preparar.
 async function registrarLinea(
   tx: Tx,
   datos: {
@@ -149,9 +151,10 @@ async function registrarLinea(
     precioUnitario?: Prisma.Decimal;
     fecha?: string;
     pedidoId?: string;
+    descontarStock?: boolean;
   },
 ) {
-  const { producto, ficha, cantidad, precioUnitario, fecha, pedidoId } = datos;
+  const { producto, ficha, cantidad, precioUnitario, fecha, pedidoId, descontarStock = true } = datos;
   const fechaGuardada = fechaParaGuardar(fecha);
   // Cliente con precio acordado para este producto: se cobra ese y no se cambia a mano (evita errores).
   // Sin precio acordado, se cobra el precio de venta o el que se escriba (regateo).
@@ -186,7 +189,16 @@ async function registrarLinea(
     },
   });
 
-  const consumo = await explotarInsumos(tx, producto.id, cantidad);
+  const { lineas, alertas } = descontarStock
+    ? await descontarConsumo(tx, venta, fechaGuardada ? `Venta del ${fecha} cargada después` : undefined)
+    : { lineas: [], alertas: [] };
+  return { venta: { ...venta, producto: producto.nombre, clienteTipo: ficha.tipo }, consumo: lineas, alertas };
+}
+
+// Descuenta del stock los insumos (con sub-recetas) de una venta. El movimiento queda con la fecha en que
+// se cargó y enlazado a la venta, así eliminarla lo devuelve.
+async function descontarConsumo(tx: Tx, venta: { id: number; productoId: number; cantidad: Prisma.Decimal }, nota?: string) {
+  const consumo = await explotarInsumos(tx, venta.productoId, venta.cantidad);
   const sinControl = new Set(
     (await tx.insumo.findMany({ where: { controlaStock: false }, select: { id: true } })).map((i) => i.id),
   );
@@ -199,14 +211,34 @@ async function registrarLinea(
       tipo: TipoMovimiento.VENTA,
       cantidad: usado.neg(),
       ventaId: venta.id,
-      // El movimiento queda con la fecha en que se cargó; la nota dice de qué día era la venta.
-      nota: fechaGuardada ? `Venta del ${fecha} cargada después` : undefined,
+      nota,
     });
     lineas.push({ insumoId, nombre: insumo.nombre, cantidad: usado, stockResultante: insumo.stockActual });
     const alerta = alertaDe(insumo);
     if (alerta) alertas.push(alerta);
   }
-  return { venta: { ...venta, producto: producto.nombre, clienteTipo: ficha.tipo }, consumo: lineas, alertas };
+  return { lineas, alertas };
+}
+
+// Pedido que se empieza a preparar (D87): descuenta los insumos de todas sus ventas ya registradas al pagar.
+export async function descontarInsumosDePedido(tx: Tx, ventaPedidoId: string, nota: string) {
+  const ventas = await tx.venta.findMany({ where: { pedidoId: ventaPedidoId } });
+  const alertas = new Map<number, AlertaStock>();
+  for (const v of ventas) {
+    for (const a of (await descontarConsumo(tx, v, nota)).alertas) alertas.set(a.insumoId, a);
+  }
+  return [...alertas.values()];
+}
+
+// Vuelve atrás «Empezar a preparar» (D87): devuelve al stock lo descontado por esas ventas, sin borrarlas.
+export async function devolverInsumosDePedido(tx: Tx, ventaPedidoId: string, nota: string) {
+  const ventas = await tx.venta.findMany({ where: { pedidoId: ventaPedidoId }, include: { movimientos: true } });
+  for (const v of ventas) {
+    for (const [insumoId, neto] of netoPorInsumo(v.movimientos)) {
+      if (neto.isZero()) continue;
+      await registrarMovimiento(tx, { insumoId, tipo: TipoMovimiento.ANULACION, cantidad: neto.neg(), ventaId: v.id, nota });
+    }
+  }
 }
 
 // Registra una venta de un solo producto (API anterior; la Caja usa /pedido).
@@ -262,11 +294,21 @@ ventasRouter.post("/pedido", async (req, res) => {
   res.status(201).json(resultado);
 });
 
+// Opciones con nombre en vez de booleanos sueltos (M2, AUDITORIA.md): `(tx, datos, false, true)` no decía qué era cada uno.
+export interface OpcionesVenta {
+  exigirCelular?: boolean; // solo los pedidos demo (clientes del Excel sin celular) lo apagan
+  descontarStock?: boolean; // un pedido pagado antes de prepararse descuenta al preparar (D87)
+}
+
 // Registra un pedido como venta (Caja, o un Pedido que se entrega: D81). Todo dentro de la transacción recibida.
-export async function registrarPedidoVenta(tx: Tx, datos: z.infer<typeof pedidoSchema>) {
+export async function registrarPedidoVenta(
+  tx: Tx,
+  datos: z.infer<typeof pedidoSchema>,
+  { exigirCelular = true, descontarStock = true }: OpcionesVenta = {},
+) {
   const { lineas, clienteId, clienteNombre, clienteTipo, celular, fecha } = datos;
   {
-    const { ficha, clienteNuevo } = await resolverCliente(tx, { clienteId, clienteNombre, celular, clienteTipo });
+    const { ficha, clienteNuevo } = await resolverCliente(tx, { clienteId, clienteNombre, celular, clienteTipo }, exigirCelular);
     const pedidoId = randomUUID();
     const ventas = [];
     const alertas = new Map<number, AlertaStock>();
@@ -279,6 +321,7 @@ export async function registrarPedidoVenta(tx: Tx, datos: z.infer<typeof pedidoS
         precioUnitario: l.precioUnitario,
         fecha,
         pedidoId,
+        descontarStock,
       });
       ventas.push(linea.venta);
       for (const a of linea.alertas) alertas.set(a.insumoId, a); // queda el estado tras la última línea
@@ -301,11 +344,23 @@ export async function registrarPedidoVenta(tx: Tx, datos: z.infer<typeof pedidoS
 
 // Sin fiados (D74): toda venta se cobra al momento; no hay «por cobrar» ni «cobrar».
 
+// Las ventas de los pedidos de demostración (npm run demo:pedidos) se guardan para mostrar el flujo en la defensa,
+// pero no son plata real: no salen en las listas ni suman en la caja, el Desempeño ni los clientes (B2, D100).
+async function sinVentasDemo(): Promise<Prisma.VentaWhereInput> {
+  const demos = await prisma.pedido.findMany({
+    where: { esDemo: true, ventaPedidoId: { not: null } },
+    select: { ventaPedidoId: true },
+  });
+  const ids = demos.flatMap((d) => (d.ventaPedidoId ? [d.ventaPedidoId] : []));
+  // OR con null: en SQL «pedidoId NOT IN (…)» también descartaría las ventas sin pedido.
+  return ids.length > 0 ? { OR: [{ pedidoId: null }, { pedidoId: { notIn: ids } }] } : {};
+}
+
 // Lista de ventas con totales. Filtros opcionales por día (hora local), ambos inclusive.
 ventasRouter.get("/", async (req, res) => {
   const { desde, hasta } = filtrosSchema.parse(req.query);
   const ventas = await prisma.venta.findMany({
-    where: { fecha: rangoFechas(desde, hasta) },
+    where: { fecha: rangoFechas(desde, hasta), ...(await sinVentasDemo()) },
     include: conCliente,
     orderBy: { fecha: "desc" },
   });
@@ -341,10 +396,11 @@ ventasRouter.get("/reporte-clientes", async (req, res) => {
   const { desde, hasta } = filtrosSchema.parse(req.query);
   const fecha = rangoFechas(desde, hasta);
   const clientes = await prisma.cliente.findMany({ orderBy: { nombre: "asc" } });
+  const sinDemo = await sinVentasDemo();
   const [ventas, historicas, ultimas, ultimasHistoricas, lineas, pedidosHistoricos] = await Promise.all([
     prisma.venta.groupBy({
       by: ["clienteId"],
-      where: { fecha, anulada: false, clienteId: { not: null } },
+      where: { fecha, anulada: false, clienteId: { not: null }, ...sinDemo },
       _sum: { totalVenta: true, cantidad: true },
     }),
     prisma.ventaHistorica.groupBy({
@@ -352,14 +408,18 @@ ventasRouter.get("/reporte-clientes", async (req, res) => {
       where: { fecha, clienteId: { not: null }, eliminada: false },
       _sum: { valor: true, cantidad: true },
     }),
-    prisma.venta.groupBy({ by: ["clienteId"], where: { anulada: false, clienteId: { not: null } }, _max: { fecha: true } }),
+    prisma.venta.groupBy({
+      by: ["clienteId"],
+      where: { anulada: false, clienteId: { not: null }, ...sinDemo },
+      _max: { fecha: true },
+    }),
     prisma.ventaHistorica.groupBy({
       by: ["clienteId"],
       where: { clienteId: { not: null }, eliminada: false },
       _max: { fecha: true },
     }),
     prisma.venta.findMany({
-      where: { fecha, anulada: false, clienteId: { not: null } },
+      where: { fecha, anulada: false, clienteId: { not: null }, ...sinDemo },
       select: { id: true, clienteId: true, pedidoId: true },
     }),
     // Una nota de varios sabores son varias líneas (D57): el pedido se cuenta por su primera línea.
@@ -536,13 +596,14 @@ ventasRouter.patch("/:id", async (req, res) => {
 
 // Elimina una venta (pedido cancelado o cargado por error, D43). Si no estaba anulada, primero devuelve
 // al stock lo descontado. Los movimientos quedan en la bitácora del inventario, sin la venta.
-export async function eliminarVenta(tx: Tx, id: number) {
+// Un pedido cancelado cuando ya se preparaba (D87) borra la venta sin devolver: los insumos ya se usaron.
+export async function eliminarVenta(tx: Tx, id: number, devolverStock = true) {
   const venta = await tx.venta.findUnique({
     where: { id },
     include: { movimientos: true, producto: { select: { nombre: true } } },
   });
   if (!venta) throw new AppError(404, `No existe la venta ${id}.`);
-  if (!venta.anulada) {
+  if (!venta.anulada && devolverStock) {
     for (const [insumoId, neto] of netoPorInsumo(venta.movimientos)) {
       if (neto.isZero()) continue;
       await registrarMovimiento(tx, {

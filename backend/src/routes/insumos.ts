@@ -6,14 +6,7 @@ import { AppError } from "../errors";
 import { costoUnitarioInsumo } from "../services/costeo";
 import { montoDeCompra, registrarCompra } from "../services/compras";
 import { alertaDe, registrarMovimiento, type AlertaStock } from "../services/inventario";
-import {
-  alMenosUnCampo,
-  decimalDistintoDeCero,
-  decimalNoNegativo,
-  decimalPositivo,
-  nombre,
-  parseId,
-} from "../validacion";
+import { alMenosUnCampo, decimalDistintoDeCero, decimalNoNegativo, decimalPositivo, nombre, parseId } from "../validacion";
 
 const insumoSchema = z.object({
   nombre,
@@ -147,9 +140,13 @@ insumosRouter.post("/:id/movimientos", async (req, res) => {
       if (!compra.movimiento) throw new AppError(500, "No se registró el movimiento de la compra.");
       return { movimiento: compra.movimiento, insumo: compra.insumo, gasto: compra.gasto };
     }
-    const cantidad = datos.stockReal !== undefined ? datos.stockReal.sub(insumo.stockActual) : (datos.cantidad ?? new Prisma.Decimal(0));
+    const cantidad =
+      datos.stockReal !== undefined ? datos.stockReal.sub(insumo.stockActual) : (datos.cantidad ?? new Prisma.Decimal(0));
     if (cantidad.isZero()) throw new AppError(422, "El stock real es igual al actual: no hay nada que actualizar.");
-    return { ...(await registrarMovimiento(tx, { insumoId: id, tipo: TipoMovimiento.AJUSTE, cantidad, nota: datos.nota })), gasto: null };
+    return {
+      ...(await registrarMovimiento(tx, { insumoId: id, tipo: TipoMovimiento.AJUSTE, cantidad, nota: datos.nota })),
+      gasto: null,
+    };
   });
 
   res.status(201).json({

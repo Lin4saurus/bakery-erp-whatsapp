@@ -234,3 +234,104 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 - Frontend: `pantallas/Atenciones.tsx` (clave de menú `atencion`); la insignia cuenta chats esperando y se refresca con el evento `dulzura:avisos`.
 - n8n (después de descartar repetidos): mensaje de la dueña (`fromMe` con `source` android/ios/web) → `POST /api/atenciones` DUENA_RESPONDIO y se anota en la memoria como «(La repostera escribió) …»; lo que manda el bot por la API llega con `source: unknown` y se ignora. Cliente → `GET /pausa` → si no está en pausa, se guarda en `dulzura_mensajes_pendientes` (Postgres «ventas»), espera 12 s y solo la ejecución del último mensaje sigue con todos los textos juntos. Primer contacto corto → bienvenida fija; «menú» → lista con precios; ambos sin IA y guardados en la memoria. Ubicación compartida → `📍 Ubicación: https://maps.google.com/?q=lat,lng`. Herramienta `pedir_atencion` → `POST /api/atenciones`.
 - Pruebas: además de `registrar_pedido`, apuntar a `:3002` `Leer clientes`, `Leer catálogo`, `pedir_atencion`, `Pausar chat` y `¿Chat en pausa?`.
+
+## El cliente paga primero (D86)
+- Estados: `POR_PAGAR` → (pago) `PENDIENTE` («Agendado») → `EN_PREPARACION` → `LISTO` → `ENTREGADO`. Sin pago, `/estado` responde 409; volver a «Por pagar» es `DELETE /:id/pago`.
+- Pagar (`pagarPedido` en `routes/pedidos.ts`) usa `registrarPedidoVenta`: la venta queda con la fecha del pago. Entregar un pedido sin venta (anteriores a D86) la registra en ese momento como efectivo.
+- `pagoReferencia` se guarda normalizada (`A-Z0-9`) y es única: un comprobante no paga dos pedidos.
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| POST | `/api/pedidos/:id/pago` | `{ metodo QR\|EFECTIVO, monto?, referencia?, comprobante? (data URL) }`: venta, stock y agenda. 409 si ya está pagado o la referencia se usó. |
+| DELETE | `/api/pedidos/:id/pago` | Borra la venta (`eliminarVenta`), devuelve el stock y vuelve a `POR_PAGAR`. |
+| POST | `/api/pedidos/pago-whatsapp` | Lo que Gemini leyó del comprobante: `{ celular, esComprobante, monto, referencia, receptor, enviadoPor, fecha, banco, confianza, titular, comprobante }`. Busca el pedido por pagar del celular; si todo cuadra → `{ resultado: "pagado", pedido }`; si no → Atención `VERIFICAR_PAGO` (u `OTRO` si no es comprobante) con el adjunto y `{ resultado: "revision", motivos }`. |
+| GET | `/api/pedidos/:id/comprobante` · `/api/atenciones/:id/adjunto` | El archivo como data URL (las listas solo traen `tieneComprobante` / `tieneAdjunto`). |
+
+- `express.json` acepta hasta 15 MB (comprobantes en base64).
+- n8n: imágenes y PDF (Evolution con «Webhook Base64») saltan la pausa y van a `¿Es PDF?` → Gemini (`image/analyze` o `document`) → `Datos del comprobante` → `Titular del QR` (`configuracion_pago.nombre_receptor`, Postgres «ventas») → `Registrar pago (ERP)` → respuesta corta y memoria. Después de cada respuesta del agente, `¿Mandar QR?` revisa `intermediateSteps` (o si el cliente escribió «qr») y envía `configuracion_pago.qr_base64` con `sendMedia`.
+- Pruebas: además de lo de D85, apuntar `Registrar pago (ERP)` a `:3002`. Un PDF de texto sirve de comprobante de prueba.
+
+## Insumos al preparar (D87)
+- `registrarPedidoVenta(tx, datos, exigirCelular, descontarStock)`: con `descontarStock = false` crea las ventas sin movimientos. `descontarInsumosDePedido` / `devolverInsumosDePedido` (en `routes/ventas.ts`) crean los movimientos VENTA / ANULACION enlazados a cada venta del pedido, así `eliminarVenta` sigue cuadrando el stock. `eliminarVenta(tx, id, devolverStock)`.
+- `Pedido.insumosDescontadosEn` evita descontar dos veces. `POST /api/pedidos/:id/estado` devuelve `alertas` de stock bajo al empezar a preparar.
+
+## Avisos en vivo (D88)
+- `routes/eventos.ts`: `GET /api/eventos` abre un stream SSE (latido cada 25 s, `retry: 3000`). `avisarAlCambiar(...temas)` se monta delante de `/api/pedidos` y `/api/atenciones`: tras cada POST/PATCH/DELETE con respuesta < 400 emite `cambio` con el tema.
+- `frontend/src/avisos.ts`: `conectarAvisos()` (una `EventSource` en App; al reconectar avisa igual) dispara el evento de ventana `dulzura:avisos`; `useAlAvisar(fn, tema)` recarga cada pantalla.
+
+## Cotización con delivery (D89)
+| Método | Ruta | Qué hace |
+|---|---|---|
+| POST | `/api/atenciones/:id/costo-envio` | `{ costoEnvio }`: guarda el costo en el pedido (debe estar en cotización y con delivery), resuelve las atenciones del chat y llama a n8n (`N8N_WEBHOOK_ENVIO`, por defecto `http://localhost:5678/webhook/dulzura-envio`; vacío = desactivado). Responde `{ costoEnvio, enviado, error? }`. |
+| POST | `/api/pedidos/cotizacion/aceptar-envio` | `{ celular }`: marca `envioAceptadoEn` en la cotización abierta (409 si la dueña no cotizó). Devuelve `total` (solo productos). |
+| POST | `/api/pedidos/cotizacion/cancelar` | `{ celular, motivo? }`: cancela la cotización abierta (sin venta). |
+- n8n: segundo disparador `Costo de envío (ERP)` (webhook `dulzura-envio`) → mensaje al cliente → memoria. `¿Mandar QR?` solo si `registrar_pedido` devolvió `entrega: RECOJO` o `aceptar_envio` devolvió `total`. El agente reintenta 3 veces si Gemini responde 503.
+
+## Pago por confirmar y posible estafa (D91)
+- `POST /api/pedidos/pago-whatsapp` nunca llama a `pagarPedido` (reemplaza la confirmación automática de D86). Acepta además `pareceEditado` y `sospecha`. Responde `resultado: "por_confirmar" | "revision"`.
+  - Congruente → atención `VERIFICAR_PAGO` («Pago por confirmar»). Con incongruencias → `POSIBLE_ESTAFA`. Imagen que no es comprobante → `OTRO`.
+  - La atención guarda `adjunto`, `montoReportado` y `referencia` (normalizada); «Llegó el pago» llama a `POST /api/pedidos/:id/pago` con esos datos y resuelve el chat.
+  - Banderas: monto distinto, destinatario distinto al titular del QR, nro. ya usado en un pedido pagado o mandado por otro chat (o para otro pedido) en espera, fecha anterior al pedido, delivery sin envío aceptado, ilegible, sin cotización abierta y `pareceEditado`.
+
+## Delivery: el resumen llega con el envío (D92)
+- `POST /api/pedidos?confirmado=no` solo rechaza pedidos de recojo; un delivery se anota como cotización sin «sí».
+- `POST /api/atenciones/:id/costo-envio` manda a n8n `{ celular, nombre, costoEnvio, lineas: [{ cantidad, producto, subtotal }], totalProductos, fechaEntrega, horaEntrega, ubicacion }`; el nodo «Mensaje del costo de envío» arma el resumen y pregunta «¿Confirmas tu pedido?».
+
+## Comprobantes sin contenido y fecha del pago (D93)
+- Si el webhook de Evolution trae una imagen o PDF sin `base64`, `Normalizar mensaje` marca `descargar: true` y n8n lo pide con `POST http://evolution-api:8080/chat/getBase64FromMediaMessage/{instancia}` (`{ message: { key: { id } } }`).
+- `pago-whatsapp`: la fecha del comprobante (AAAA-MM-DD) debe estar entre el día de la cotización (zona America/La_Paz; hoy si no hay cotización) y hoy.
+
+## Incongruencias en lista y saldo incompleto (D94)
+- `Atencion.descripcion` de un comprobante: primer renglón de título, `!- ` incongruencia grave (monto incompleto), `- ` normal, último renglón con banco y quién pagó. La pantalla lo dibuja como lista.
+- `pago-whatsapp` responde `resultado: "por_confirmar" | "incompleto" | "revision"` y `faltante`. `crearAtencion` acepta `unir: false` (tarjeta nueva) y `actualizarId`.
+- n8n: `SOLO_NUMEROS_DE_PRUEBA` en «Normalizar mensaje» limita el agente a esos números (lista vacía = todos).
+
+## Sprint 4 de la auditoría (D103)
+| Método | Ruta | Qué hace |
+|---|---|---|
+| GET | `/api/configuracion/gastos-fijos` | `{ gastosFijos }` (Bs 300 si nunca se cambió) |
+| PUT | `/api/configuracion/gastos-fijos` | Guarda `{ gastosFijos }` (Decimal ≥ 0, hasta 1 000 000) |
+- `components/ui/Opciones.tsx`: `<Opciones etiqueta valor opciones alCambiar ancho? mostrarEtiqueta? />`, `role=radiogroup`, Tab entra en la elegida y las flechas cambian.
+- `services/backup.ts`: `elegirAConservar(respaldos, recientes, hoy)`; `BACKUP_KEEP` sigue siendo «los más recientes» (30).
+- `api.ts` `mensajeDeError` traduce `detalles[].campo` con `NOMBRE_CAMPO`; `validacion.ts` da el tipo esperado en palabras.
+- Ojo con `.refine()` después de `decimal…`: corre aun si el valor es inválido (pasó con gastos fijos; el tope va en la ruta).
+
+## Sprint 3 de la auditoría (D102)
+- `services/comprobantes.ts`: `evaluarComprobante(leido, contexto)` es pura (sin Prisma) y devuelve `resultado`, `valido`, `saldo`, `faltante` (Decimal), `rechazos` y `revision`; `redactarDescripcion` arma la tarjeta. La ruta `/pago-whatsapp` junta el contexto (total, ya pagado, parciales, envío sin aceptar, referencia repetida) y escribe. A n8n los montos van como número.
+- `services/costeo.ts`: `calcularCostoProducto(db, id, ruta, memo)`; `precargarCosteo(db)` trae todas las recetas en una consulta. El caché vive una petición.
+- `server.ts`: sin `HOST` escucha en `127.0.0.1` y `::1` (en Windows «localhost» prueba primero IPv6).
+- `Atencion.celularClave` (últimos 8 dígitos) reemplaza los `endsWith` sobre `celular`.
+
+## Sprint 2 de la auditoría (D101)
+| Método | Ruta | Qué hace |
+|---|---|---|
+| GET | `/api/agente/config` | `{ numerosPrueba: string[] }` (vacío = el agente atiende a todos) |
+| PUT | `/api/agente/config` | Guarda `{ numerosPrueba }` (solo dígitos, 7–15, sin repetidos, máx. 20) |
+| GET | `/api/clientes/por-celular/:celular` | `{ cliente }` con sus precios, por los últimos 8 dígitos; `{ cliente: null }` si no existe |
+- Tabla `Configuracion(clave, valor JSON)`; clave `agente.numerosPrueba`.
+- n8n: «Modo prueba (ERP)» (HTTP, `onError: continue`) → «Normalizar mensaje» (lee el cuerpo de «Mensaje de WhatsApp (Evolution)»; guarda la última lista en static data). `errorWorkflow` = «ERP Dulzura - Aviso de fallas del agente» (`n4Xt9hMkyM0j3ox2`).
+- Postgres «ventas»: `dulzura_chat_memoria.creado timestamptz default now()` e índice `(session_id, creado)`.
+
+## Ventas demo fuera de los totales (D100)
+- `sinVentasDemo()` en `routes/ventas.ts`: `OR [pedidoId null, pedidoId notIn (Pedido.ventaPedidoId de los esDemo)]`, aplicado en `GET /api/ventas` y en las tres consultas de `reporte-clientes`. El OR con null evita que `NOT IN` descarte las ventas de Caja sin pedido.
+
+## Sprint 1 de la auditoría (D99)
+- `HOST` (por defecto `127.0.0.1`) en `server.ts`; `.env.example` lo documenta.
+- `app.ts`: `express.json({ limit: "15mb" })` solo en `/api/pedidos/pago-whatsapp` y `/api/pedidos/:id/pago`; `100kb` en el resto. `errors.ts` responde 413 a `entity.too.large`.
+- Comprobante: `^data:(image/(jpeg|jpg|png|webp|gif|heic|heif)|application/pdf);base64,`. `frontend/src/pedidos.ts` `abrirArchivo` abre solo tipos seguros; el resto se descarga como `application/octet-stream`.
+- `erp-prueba` (launch.json) corre con `N8N_WEBHOOK_ENVIO=""`: las pruebas en la copia no le escriben a nadie.
+
+## Los pedidos se anotan en Caja (D98)
+- Caja con `modo` `AHORA` (`api.crearPedido`, venta inmediata) o `ENTREGA` (`api.crearPedidoEntrega` con `fechaEntrega`, `horaEntrega`, `entrega`, `ubicacion`, `costoEnvio`, `nota` y `pago` opcional). `lineasSchema` de pedidos acepta `precioUnitario` (acordado > anotado > precio de venta). `FormularioPedido` queda solo para editar.
+
+## «Ya está agendado» al confirmar el pago (D97)
+- `POST /api/pedidos/:id/pago` acepta `avisarCliente: boolean`; si el cliente tiene celular llama `avisarAlCliente` (atenciones.ts, antes `avisarCostoEnvio`) con `{ tipo: "pago_confirmado", celular, nombre, fechaEntrega, horaEntrega, entrega }` y devuelve `aviso: { enviado, error? } | null`. El costo de envío ahora manda `tipo: "costo_envio"`.
+
+## Pago bueno tras uno rechazado y destino por cuenta (D96)
+- `pago-whatsapp` acepta `cuentaDestino` (lo que lee Gemini como «A la cuenta») y `cuentaTitular` (`configuracion_pago.cuenta_receptor`, Postgres «ventas»). Destino válido si coincide el nombre o los últimos 8 dígitos de la cuenta.
+- Un comprobante válido sin reenvío usa `actualizarId` sobre la tarjeta `POSIBLE_ESTAFA` pendiente más reciente de la cotización; las otras rechazadas pasan a `RESUELTA`.
+
+## Filtro anti-estafas: fecha de hoy y cero confianza (D95)
+- `pago-whatsapp` → `resultado: "por_confirmar" | "incompleto" | "rechazado" | "revision"`, más `faltante`, `monto`, `saldo` y `motivosCliente` (motivos en palabras del cliente).
+- Rechazo: fecha ≠ hoy (America/La_Paz) o sin fecha, destinatario ≠ titular del QR, `estadoPago` pendiente/en proceso/rechazado/fallido, `pareceEditado`, nro. de operación ya usado o en espera en otro chat, tercer pago parcial. Revisión (no rechaza): sin cotización, ilegible, pagó de más, delivery sin aceptar.
+- Saldo = total − `montoReportado` de las tarjetas pendientes de esa cotización; solo los válidos guardan `montoReportado` (cero confianza). `saldoPendiente` > 0 en un `VERIFICAR_PAGO` = pago parcial.

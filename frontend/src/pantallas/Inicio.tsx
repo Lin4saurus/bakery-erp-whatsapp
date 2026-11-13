@@ -9,11 +9,12 @@ import {
   MdOutlineWarningAmber,
   MdRefresh,
 } from "react-icons/md";
-import { api, type Pedido, type Venta } from "../api";
+import { api, mensajeDeError, type Pedido, type Venta } from "../api";
+import { useAlAvisar } from "../avisos";
 import { claseEstado, diaMas, nombreDia, nombreEstado, paraPreparar, urgentes } from "../pedidos";
 import { BarChart, type Barra } from "../components/charts/BarChart";
 import { PuntoEquilibrioCard } from "../components/dashboard/PuntoEquilibrioCard";
-import { GASTOS_FIJOS_MENSUALES, puntoDeEquilibrio } from "../components/dashboard/indicadores";
+import { GASTOS_FIJOS_INICIALES, puntoDeEquilibrio } from "../components/dashboard/indicadores";
 import { bs, cantidad, diaLargo, hoyISO, hora, inicioDeMesISO, medida } from "../formato";
 import { Aviso, Button, Cargando, Panel, useDatos } from "../ui";
 import { prepararAjuste, prepararCompra, prepararDia } from "../compraPendiente";
@@ -21,6 +22,56 @@ import { tomarUltimaVenta } from "../ultimaVenta";
 import "./Inicio.css";
 
 const MAX_ALERTAS = 3;
+
+// Modo prueba del agente de WhatsApp (N4, D101): mientras haya números de prueba, el agente ignora a todos los demás
+// clientes. Se avisa siempre arriba para que no quede así por olvido al empezar a vender de verdad.
+function ModoPruebaAgente() {
+  const config = useDatos(() => api.configAgente());
+  const [confirmar, setConfirmar] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const numeros = config.datos?.numerosPrueba ?? [];
+  if (numeros.length === 0) return null;
+  const quitar = async () => {
+    setGuardando(true);
+    setError(null);
+    try {
+      await api.guardarConfigAgente([]);
+      setConfirmar(false);
+      await config.recargar();
+    } catch (e) {
+      setError(mensajeDeError(e));
+    } finally {
+      setGuardando(false);
+    }
+  };
+  const lista = numeros.map((n) => (n.length === 11 && n.startsWith("591") ? n.slice(3) : n)).join(", ");
+  return (
+    <Aviso tipo="alerta">
+      <span className="inicio-prueba">
+        <span>
+          <strong>Agente de WhatsApp en modo prueba:</strong> solo le contesta a {lista}. Los demás clientes no reciben respuesta.
+        </span>
+        {confirmar ? (
+          <span className="inicio-prueba__botones">
+            <span>¿Atender a todos los clientes desde ahora?</span>
+            <Button tamano="chico" variante="exito" disabled={guardando} onClick={() => void quitar()}>
+              Sí, atender a todos
+            </Button>
+            <Button tamano="chico" disabled={guardando} onClick={() => setConfirmar(false)}>
+              Volver
+            </Button>
+          </span>
+        ) : (
+          <Button tamano="chico" onClick={() => setConfirmar(true)}>
+            Quitar modo prueba
+          </Button>
+        )}
+      </span>
+      {error && <span className="negativo"> {error}</span>}
+    </Aviso>
+  );
+}
 const DIAS = ["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sá"];
 
 const isoLocal = (fecha: Date): string => fecha.toLocaleDateString("sv-SE");
@@ -63,8 +114,10 @@ export function Inicio() {
   const insumos = useDatos(api.insumos);
   const inicioMes = inicioDeMesISO();
   const ventasMes = useDatos(() => api.ventas(inicioMes, hoy), [inicioMes, hoy]);
+  const gastosFijos = useDatos(() => api.gastosFijos());
   const gastosMes = useDatos(() => api.gastos(inicioMes, hoy), [inicioMes, hoy]);
   const pedidos = useDatos(() => api.pedidos("proximos"));
+  useAlAvisar(() => void pedidos.recargar(), "pedidos"); // en vivo (D88)
 
   const recargarTodo = () => {
     void semana.recargar();
@@ -93,7 +146,11 @@ export function Inicio() {
       .reduce((t, g) => t + Number(g.monto), 0) ?? 0;
   const tono = (valor: number) => (valor < 0 ? "negativo" : valor > 0 ? "positivo" : undefined);
 
-  const equilibrio = puntoDeEquilibrio(ventasMes.datos?.ventas ?? [], productos.datos ?? [], GASTOS_FIJOS_MENSUALES);
+  const equilibrio = puntoDeEquilibrio(
+    ventasMes.datos?.ventas ?? [],
+    productos.datos ?? [],
+    gastosFijos.datos ? Number(gastosFijos.datos.gastosFijos) : GASTOS_FIJOS_INICIALES,
+  );
   const nombreMes = new Date().toLocaleDateString("es-BO", { month: "long" });
 
   const barras = tendenciaSemanal(ventasSemana);
@@ -130,6 +187,8 @@ export function Inicio() {
           </Button>
         </div>
       </div>
+
+      <ModoPruebaAgente />
 
       {ultima && (
         <Aviso tipo="ok">
@@ -274,7 +333,14 @@ export function Inicio() {
 
       {/* Punto de equilibrio y Ventas de hoy, uno al lado del otro (D77). */}
       <div className="inicio__indicadores">
-        <PuntoEquilibrioCard equilibrio={equilibrio} mes={nombreMes} />
+        <PuntoEquilibrioCard
+          equilibrio={equilibrio}
+          mes={nombreMes}
+          guardarGastosFijos={async (valor) => {
+            await api.guardarGastosFijos(valor);
+            await gastosFijos.recargar();
+          }}
+        />
         <Panel titulo="Ventas de hoy">
           {semana.cargando && !semana.datos ? (
             <Cargando />
@@ -313,19 +379,22 @@ export function Inicio() {
 }
 
 // Recordatorio de pedidos (D81): atrasados, hoy y mañana, con lo que hay que preparar.
-function ProximosPedidos({ pedidos, hoy }: { pedidos: Pedido[]; hoy: string }) {
+// Los que esperan pago todavía no están agendados (D86): solo se cuentan aparte.
+function ProximosPedidos({ pedidos: todos, hoy }: { pedidos: Pedido[]; hoy: string }) {
+  const pedidos = todos.filter((p) => p.estado !== "POR_PAGAR");
+  const esperandoPago = todos.length - pedidos.length;
   const manana = diaMas(hoy, 1);
   const cercanos = pedidos.filter((p) => p.fechaEntrega <= manana);
   const { atrasados, deHoy, deManana } = urgentes(pedidos, hoy);
   const preparar = paraPreparar(pedidos.filter((p) => p.fechaEntrega <= hoy));
   const resumen =
-    cercanos.length === 0
+    (cercanos.length === 0
       ? pedidos.length === 0
-        ? "No hay pedidos por entregar."
+        ? "No hay pedidos agendados."
         : `Nada para hoy ni mañana · ${pedidos.length} pedido(s) más adelante.`
       : [atrasados > 0 ? `${atrasados} atrasado(s)` : null, `${deHoy} para hoy`, `${deManana} para mañana`]
           .filter(Boolean)
-          .join(" · ");
+          .join(" · ")) + (esperandoPago > 0 ? ` · ${esperandoPago} esperando pago` : "");
   return (
     <Panel
       titulo={

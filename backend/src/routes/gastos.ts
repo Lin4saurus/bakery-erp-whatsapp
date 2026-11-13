@@ -58,7 +58,10 @@ gastosRouter.post("/", async (req, res) => {
     if (!insumo) throw new AppError(404, `No existe el insumo ${insumoId}.`);
     if (!insumo.activo) throw new AppError(422, `"${insumo.nombre}" está inactivo.`);
     if (!insumo.controlaStock) {
-      throw new AppError(422, `"${insumo.nombre}" no se compra (no lleva stock). Si es limpieza, cárgalo en la categoría Limpieza.`);
+      throw new AppError(
+        422,
+        `"${insumo.nombre}" no se compra (no lleva stock). Si es limpieza, cárgalo en la categoría Limpieza.`,
+      );
     }
     const { gasto: compra } = await registrarCompra(tx, {
       insumo,

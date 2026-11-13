@@ -33,10 +33,37 @@ export interface Respaldo {
 
 export const carpetaRespaldos = (): string => path.resolve(RAIZ, process.env.BACKUP_DIR ?? "backups");
 
-const respaldosAConservar = (): number => {
+// Los más recientes que se guardan siempre (BACKUP_KEEP, por defecto 30, como antes).
+const respaldosRecientes = (): number => {
   const valor = Number(process.env.BACKUP_KEEP ?? 30);
   return Number.isInteger(valor) && valor > 0 ? valor : 30;
 };
+
+// Retención escalonada (D1, AUDITORIA.md): nunca borra más que la regla anterior. Los N más recientes, más el último de cada día de los últimos 30 días y el
+// último de cada mes de los últimos 12 meses. Así los respaldos manuales de un día de mucho trabajo (antes de cada
+// migración) ya no se comen el de hace un mes. `respaldos` viene del más nuevo al más viejo.
+export function elegirAConservar(respaldos: readonly { archivo: string }[], recientes: number, hoy = new Date()): Set<string> {
+  const conservar = new Set(respaldos.slice(0, recientes).map((r) => r.archivo));
+  const dia = (archivo: string) => PATRON.exec(archivo)?.[1] ?? "";
+  const limiteDias = new Date(hoy.getTime() - 30 * 86_400_000).toLocaleDateString("sv-SE");
+  const limiteMeses = new Date(hoy.getFullYear(), hoy.getMonth() - 11, 1).toLocaleDateString("sv-SE").slice(0, 7);
+  const vistosDia = new Set<string>();
+  const vistosMes = new Set<string>();
+  for (const r of respaldos) {
+    const d = dia(r.archivo);
+    if (!d) continue;
+    if (d >= limiteDias && !vistosDia.has(d)) {
+      vistosDia.add(d);
+      conservar.add(r.archivo);
+    }
+    const mes = d.slice(0, 7);
+    if (mes >= limiteMeses && !vistosMes.has(mes)) {
+      vistosMes.add(mes);
+      conservar.add(r.archivo);
+    }
+  }
+  return conservar;
+}
 
 // DATABASE_URL de SQLite ("file:./dulzura.db") es relativa a la carpeta del schema.
 export function rutaBaseDeDatos(url = process.env.DATABASE_URL ?? ""): string {
@@ -109,7 +136,8 @@ export async function crearRespaldo(db: Db): Promise<Respaldo & { eliminados: st
 
   const eliminados: string[] = [];
   const todos = await listarRespaldos(carpeta);
-  for (const viejo of todos.slice(respaldosAConservar())) {
+  const conservar = elegirAConservar(todos, respaldosRecientes());
+  for (const viejo of todos.filter((r) => !conservar.has(r.archivo))) {
     await rm(viejo.ruta, { force: true });
     eliminados.push(viejo.archivo);
   }

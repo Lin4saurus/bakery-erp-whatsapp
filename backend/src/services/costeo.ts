@@ -51,22 +51,44 @@ export interface CostoProducto {
   subRecetas: LineaSubReceta[];
 }
 
+const conReceta = {
+  ingredientes: { include: { insumo: true }, orderBy: { id: "asc" } },
+  subRecetas: { include: { subProducto: true }, orderBy: { id: "asc" } },
+} satisfies Prisma.ProductoInclude;
+type ProductoConReceta = Prisma.ProductoGetPayload<{ include: typeof conReceta }>;
+
+// Caché de una sola petición (R2, AUDITORIA.md). Al listar productos se precargan todas las recetas en una consulta y
+// cada costo (los rellenos compartidos también) se calcula una vez, en memoria. No es global: nunca muestra un precio
+// viejo. Guarda solo resultados terminados; un ciclo lo corta `ruta`.
+export interface MemoCosteo {
+  costos: Map<number, CostoProducto>;
+  recetas: Map<number, ProductoConReceta>;
+}
+
+export async function precargarCosteo(db: Db): Promise<MemoCosteo> {
+  const todos = await db.producto.findMany({ include: conReceta });
+  return { costos: new Map(), recetas: new Map(todos.map((p) => [p.id, p])) };
+}
+
 export async function calcularCostoProducto(
   db: Db,
   productoId: number,
   ruta: readonly number[] = [],
+  memo: MemoCosteo = { costos: new Map(), recetas: new Map() },
 ): Promise<CostoProducto> {
   if (ruta.includes(productoId)) {
     throw new AppError(422, `Ciclo de sub-recetas detectado: ${[...ruta, productoId].join(" → ")}.`);
   }
+  const listo = memo.costos.get(productoId);
+  if (listo) return listo;
+  const costo = await calcularSinMemo(db, productoId, ruta, memo);
+  memo.costos.set(productoId, costo);
+  return costo;
+}
 
-  const producto = await db.producto.findUnique({
-    where: { id: productoId },
-    include: {
-      ingredientes: { include: { insumo: true }, orderBy: { id: "asc" } },
-      subRecetas: { include: { subProducto: true }, orderBy: { id: "asc" } },
-    },
-  });
+async function calcularSinMemo(db: Db, productoId: number, ruta: readonly number[], memo: MemoCosteo): Promise<CostoProducto> {
+  const producto =
+    memo.recetas.get(productoId) ?? (await db.producto.findUnique({ where: { id: productoId }, include: conReceta }));
   if (!producto) {
     throw new AppError(404, `No existe el producto ${productoId}.`);
   }
@@ -87,7 +109,7 @@ export async function calcularCostoProducto(
 
   const subRecetas: LineaSubReceta[] = [];
   for (const { cantidad, subProducto } of producto.subRecetas) {
-    const sub = await calcularCostoProducto(db, subProducto.id, [...ruta, productoId]);
+    const sub = await calcularCostoProducto(db, subProducto.id, [...ruta, productoId], memo);
     subRecetas.push({
       subProductoId: subProducto.id,
       nombre: subProducto.nombre,
@@ -99,7 +121,10 @@ export async function calcularCostoProducto(
   }
 
   const cero = new Prisma.Decimal(0);
-  const costoTanda = [...insumos.filter((l) => !l.esEmpaque), ...subRecetas].reduce((total, linea) => total.add(linea.costo), cero);
+  const costoTanda = [...insumos.filter((l) => !l.esEmpaque), ...subRecetas].reduce(
+    (total, linea) => total.add(linea.costo),
+    cero,
+  );
   const costoEmpaque = insumos.filter((l) => l.esEmpaque).reduce((total, linea) => total.add(linea.costo), cero);
   const unidadesPorVenta = esVenta ? producto.unidadesPorVenta : new Prisma.Decimal(1);
   const costoUnitario = costoTanda.div(producto.rendimientoReceta).mul(unidadesPorVenta).add(costoEmpaque);

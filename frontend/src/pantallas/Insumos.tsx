@@ -12,7 +12,6 @@ import {
 } from "../api";
 import {
   bs,
-  cantidad,
   costoUnidad,
   esNumeroValido,
   nombreCategoria,

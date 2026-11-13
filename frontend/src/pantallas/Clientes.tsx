@@ -28,8 +28,6 @@ export function Clientes() {
   const [preciosDeId, setPreciosDeId] = useState<string | null>(null);
   const preciosDe = clientes.datos?.find((c) => c.id === preciosDeId) ?? null; // siempre con los datos recién cargados
   const [mensaje, setMensaje] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
   const visibles = clientes.datos?.filter((c) => filtro === "TODOS" || c.tipo === filtro) ?? [];
   const encontrado = clientes.datos?.find((c) => c.id === encontradoId) ?? null;
   const compras = (id: string) => reporte.datos?.find((r) => r.id === id);
@@ -132,7 +130,7 @@ export function Clientes() {
       </div>
 
       {mensaje && <Aviso tipo="ok">{mensaje}</Aviso>}
-      {(error ?? clientes.error) && <Aviso tipo="error">{error ?? clientes.error}</Aviso>}
+      {clientes.error && <Aviso tipo="error">{clientes.error}</Aviso>}
 
       {nuevo && (
         <Panel titulo="Nuevo cliente">

@@ -265,15 +265,22 @@ model PrecioCliente {
 }
 
 // ---------- Pedidos por entregar (D81) ----------
-// Un pedido es un encargo para un día: no es venta ni descuenta stock hasta que se entrega.
-// Al marcarlo ENTREGADO se registra la venta (como en la Caja) y queda enlazada con ventaPedidoId.
+// Un pedido es un encargo para un día. El cliente paga primero (D86): al confirmar el pago se registra
+// la venta (como en la Caja), baja el stock y el pedido queda agendado; ventaPedidoId la enlaza.
 
 enum EstadoPedido {
-  PENDIENTE // anotado, todavía no se empezó
+  POR_PAGAR // anotado, esperando el pago (QR): todavía no se agenda
+  PENDIENTE // pagado y agendado, todavía no se empezó
   EN_PREPARACION // en el horno / armándose
   LISTO // terminado, esperando que lo recojan o se lleve
-  ENTREGADO // entregado y cobrado: ya es venta
+  ENTREGADO // entregado
   CANCELADO
+}
+
+// Cómo pagó el cliente (D86).
+enum MetodoPago {
+  QR // transferencia o QR, con comprobante
+  EFECTIVO // en el local
 }
 
 enum OrigenPedido {
@@ -288,25 +295,32 @@ enum TipoEntrega {
 }
 
 model Pedido {
-  id                String       @id @default(uuid())
-  numero            Int          @unique // número corto para hablar del pedido («pedido 12»)
-  clienteId         String
-  fechaEntrega      String // día de entrega AAAA-MM-DD (hora local)
-  horaEntrega       String? // HH:MM, opcional
-  estado            EstadoPedido @default(PENDIENTE)
-  origen            OrigenPedido @default(MANUAL)
-  nota              String? // «sin nueces», «con dedicatoria», dirección…
-  entrega           TipoEntrega  @default(RECOJO) // recojo en el local o delivery (D85)
-  ubicacion         String? // enlace de Google Maps o dirección, si es delivery
-  costoEnvio        Decimal? // Bs del delivery cotizado por la dueña (lo paga el cliente, no es venta)
-  total             Decimal // Bs según los precios al anotar el pedido
-  esDemo            Boolean      @default(false) // datos de demostración (npm run demo:pedidos)
-  ventaPedidoId     String? // Venta.pedidoId creado al entregar
-  entregadoEn       DateTime?
-  canceladoEn       DateTime?
-  motivoCancelacion String?
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  id                   String       @id @default(uuid())
+  numero               Int          @unique // número corto para hablar del pedido («pedido 12»)
+  clienteId            String
+  fechaEntrega         String // día de entrega AAAA-MM-DD (hora local)
+  horaEntrega          String? // HH:MM, opcional
+  estado               EstadoPedido @default(PENDIENTE)
+  origen               OrigenPedido @default(MANUAL)
+  nota                 String? // «sin nueces», «con dedicatoria», dirección…
+  entrega              TipoEntrega  @default(RECOJO) // recojo en el local o delivery (D85)
+  ubicacion            String? // enlace de Google Maps o dirección, si es delivery
+  costoEnvio           Decimal? // Bs del delivery cotizado por la dueña (lo paga el cliente, no es venta)
+  total                Decimal // Bs según los precios al anotar el pedido
+  pagadoEn             DateTime? // cuándo se confirmó el pago: ahí se registra la venta (D86)
+  metodoPago           MetodoPago?
+  montoPagado          Decimal? // lo que dice el comprobante (o el total, si pagó en efectivo)
+  pagoReferencia       String?      @unique // nro. de operación del comprobante, normalizado: no se acepta dos veces
+  comprobante          String? // imagen o PDF del comprobante como data URL
+  insumosDescontadosEn DateTime? // al «Empezar a preparar» se descuentan los insumos de la receta (D87)
+  envioAceptadoEn      DateTime? // el cliente aceptó el costo del envío cotizado por la dueña: recién ahí se le manda el QR (D89)
+  esDemo               Boolean      @default(false) // datos de demostración (npm run demo:pedidos)
+  ventaPedidoId        String? // Venta.pedidoId creado al pagar (o al entregar, si no se pagó antes)
+  entregadoEn          DateTime?
+  canceladoEn          DateTime?
+  motivoCancelacion    String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 
   cliente    Cliente       @relation(fields: [clienteId], references: [id], onDelete: Restrict)
   lineas     PedidoLinea[]
@@ -338,6 +352,8 @@ enum MotivoAtencion {
   COTIZAR_DELIVERY // «¿cuánto sale en Yango?»
   PEDIDO_PERSONALIZADO // diseño, tamaño o producto que no está en la lista
   RECLAMO
+  VERIFICAR_PAGO // comprobante congruente: la dueña mira en su banco que llegó y lo confirma (D91)
+  POSIBLE_ESTAFA // comprobante con incongruencias: monto, destinatario, nro. repetido, fecha, edición… (D91)
   DUENA_RESPONDIO // la dueña escribió desde el WhatsApp del negocio: el agente se calla
   OTRO
 }
@@ -350,11 +366,16 @@ enum EstadoAtencion {
 model Atencion {
   id          String         @id @default(uuid())
   celular     String // número de WhatsApp del cliente (solo dígitos)
+  celularClave String @default("") // últimos 8 dígitos: para buscar el chat por igualdad, con índice (B1)
   nombre      String? // como se presentó en el chat
   clienteId   String?
   pedidoId    String?
   motivo      MotivoAtencion
   descripcion String // breve: qué tiene que hacer la dueña
+  adjunto     String? // comprobante o imagen que mandó el cliente (data URL, D86)
+  montoReportado Decimal? // lo que dice el comprobante si es válido; null si se rechazó (cero confianza, D95)
+  referencia     String? // nro. de operación del comprobante, normalizado (D91)
+  saldoPendiente Decimal? // lo que falta pagar después de este comprobante; > 0 = pago parcial válido (D95)
   estado      EstadoAtencion @default(PENDIENTE)
   resueltaEn  DateTime?
   createdAt   DateTime       @default(now())
@@ -364,5 +385,14 @@ model Atencion {
   pedido  Pedido?  @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
 
   @@index([estado, createdAt])
-  @@index([celular, estado])
+  @@index([celularClave, estado])
+  @@index([pedidoId, estado])
+  @@index([referencia])
+}
+
+// Ajustes sueltos que se cambian sin tocar código (D101): clave → valor en JSON. Hoy, el modo prueba del agente.
+model Configuracion {
+  clave     String   @id
+  valor     String
+  updatedAt DateTime @updatedAt
 }

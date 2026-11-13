@@ -17,8 +17,41 @@
   box-shadow: var(--shadow-sm);
 }
 
-.atencion--reclamo {
+.atencion--reclamo,
+.atencion--posible_estafa {
   border-left-color: var(--color-error);
+}
+
+/* Comprobante congruente: solo falta que la dueña vea el dinero en su banco (D91). */
+.atencion--verificar_pago {
+  border-left-color: var(--color-success);
+}
+
+.atencion--posible_estafa .atencion__descripcion {
+  background: var(--color-error-soft);
+}
+
+/* Incongruencias en lista (D94); el monto incompleto, resaltado. Los renglones sueltos respetan sus saltos. */
+.atencion__descripcion {
+  white-space: pre-line;
+}
+
+.atencion__descripcion p {
+  margin: 0;
+}
+
+.atencion__incongruencias {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.atencion__incongruencias li + li {
+  margin-top: 4px;
+}
+
+.atencion__grave {
+  font-weight: 700;
+  color: var(--color-error);
 }
 
 .atencion--duena_respondio,
@@ -68,4 +101,44 @@
   align-items: center;
   gap: 6px;
   text-decoration: none;
+}
+
+/* Comprobante o imagen que mandó el cliente (D86). */
+.atencion__adjunto {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.atencion__adjunto svg {
+  font-size: 18px;
+}
+
+/* Número primero y grande (D88): es lo que la dueña ve en WhatsApp si no tiene guardado al cliente. */
+.atencion__numero {
+  font-size: 18px;
+  letter-spacing: 0.02em;
+}
+
+/* La dueña escribe el costo del envío que leyó en Yango y se lo manda al cliente (D89). */
+.atencion__cotizar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-1);
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+}
+
+.atencion__cotizar .campo {
+  flex: 1 1 180px;
 }

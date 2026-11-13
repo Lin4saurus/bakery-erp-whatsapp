@@ -278,9 +278,11 @@ export interface ReporteCliente {
 }
 
 // ---------- Pedidos por entregar (D81) ----------
-export type EstadoPedido = "PENDIENTE" | "EN_PREPARACION" | "LISTO" | "ENTREGADO" | "CANCELADO";
+// POR_PAGAR (D86): el cliente paga primero; recién pagado el pedido se agenda.
+export type EstadoPedido = "POR_PAGAR" | "PENDIENTE" | "EN_PREPARACION" | "LISTO" | "ENTREGADO" | "CANCELADO";
 export type OrigenPedido = "MANUAL" | "WHATSAPP";
 export type TipoEntrega = "RECOJO" | "DELIVERY"; // D85
+export type MetodoPago = "QR" | "EFECTIVO";
 
 export interface LineaPedido {
   id: number;
@@ -308,6 +310,14 @@ export interface Pedido {
   unidades: string;
   esDemo: boolean;
   ventaPedidoId: string | null;
+  pagado: boolean; // tiene su venta registrada (D86)
+  pagadoEn: string | null;
+  metodoPago: MetodoPago | null;
+  montoPagado: string | null;
+  pagoReferencia: string | null;
+  tieneComprobante: boolean;
+  insumosDescontadosEn: string | null; // al empezar a preparar (D87)
+  envioAceptadoEn: string | null; // el cliente aceptó el costo del envío (D89)
   entregadoEn: string | null;
   canceladoEn: string | null;
   motivoCancelacion: string | null;
@@ -316,7 +326,7 @@ export interface Pedido {
 }
 
 export interface DatosPedido {
-  lineas: { productoId: number; cantidad: string }[];
+  lineas: { productoId: number; cantidad: string; precioUnitario?: string }[];
   fechaEntrega: string;
   horaEntrega?: string | null;
   nota?: string | null;
@@ -325,8 +335,17 @@ export interface DatosPedido {
   costoEnvio?: string | null;
 }
 
+export interface DatosPago {
+  metodo: MetodoPago;
+  monto?: number | null;
+  referencia?: string | null;
+  comprobante?: string | null; // data URL
+  avisarCliente?: boolean; // desde Atención: le llega «ya está agendado» por WhatsApp (D97)
+}
+
 // ---------- Atención humana (D85) ----------
-export type MotivoAtencion = "COTIZAR_DELIVERY" | "PEDIDO_PERSONALIZADO" | "RECLAMO" | "DUENA_RESPONDIO" | "OTRO";
+export type MotivoAtencion =
+  "COTIZAR_DELIVERY" | "PEDIDO_PERSONALIZADO" | "RECLAMO" | "VERIFICAR_PAGO" | "POSIBLE_ESTAFA" | "DUENA_RESPONDIO" | "OTRO";
 
 export interface Atencion {
   id: string;
@@ -338,6 +357,10 @@ export interface Atencion {
   resueltaEn: string | null;
   createdAt: string;
   updatedAt: string;
+  tieneAdjunto: boolean; // comprobante o imagen que mandó el cliente (D86)
+  montoReportado: string | null; // lo que dice el comprobante (D91)
+  referencia: string | null; // nro. de operación del comprobante (D91)
+  saldoPendiente: string | null; // lo que falta pagar después de este comprobante (D95)
   cliente: { id: string; nombre: string; celular: string | null } | null;
   pedido: {
     id: string;
@@ -346,6 +369,8 @@ export interface Atencion {
     horaEntrega: string | null;
     entrega: TipoEntrega;
     ubicacion: string | null;
+    estado: EstadoPedido;
+    total: string;
   } | null;
 }
 
@@ -385,9 +410,58 @@ async function pedir<T>(metodo: string, ruta: string, cuerpo?: unknown): Promise
   return datos as T;
 }
 
+// Nombre de cada campo como lo ve la dueña (U4, AUDITORIA.md): «lineas.0.cantidad» → «Producto 1 · Cantidad».
+const NOMBRE_CAMPO: Record<string, string> = {
+  celular: "Celular",
+  clienteNombre: "Nombre del cliente",
+  nombre: "Nombre",
+  fechaEntrega: "Día de entrega",
+  horaEntrega: "Hora",
+  fecha: "Fecha",
+  costoEnvio: "Costo del envío",
+  precioUnitario: "Precio",
+  precio: "Precio",
+  precioVenta: "Precio de venta",
+  precioEnvase: "Precio del envase",
+  contenidoEnvase: "Contenido del envase",
+  cantidad: "Cantidad",
+  envases: "Envases",
+  monto: "Monto",
+  descripcion: "Descripción",
+  ubicacion: "Ubicación",
+  nota: "Nota",
+  comprobante: "Comprobante",
+  referencia: "Nro. de operación",
+  gastosFijos: "Gastos fijos",
+  numerosPrueba: "Número de prueba",
+  rendimientoReceta: "Rendimiento",
+  stockMinimo: "Stock mínimo",
+  categoria: "Categoría",
+  lineas: "Producto",
+  ingredientes: "Ingrediente",
+  subRecetas: "Relleno",
+};
+
+const campoLegible = (campo: string): string =>
+  campo
+    .split(".")
+    .filter(Boolean)
+    .map((parte, i, partes) =>
+      /^\d+$/.test(parte)
+        ? null
+        : `${NOMBRE_CAMPO[parte] ?? parte}${/^\d+$/.test(partes[i + 1] ?? "") ? ` ${Number(partes[i + 1]) + 1}` : ""}`,
+    )
+    .filter((p): p is string => p !== null)
+    .join(" · ");
+
 export const mensajeDeError = (error: unknown): string => {
   if (error instanceof ApiError) {
-    const detalle = error.detalles.map((d) => `${d.campo}: ${d.mensaje}`).join(" · ");
+    const detalle = error.detalles
+      .map((d) => {
+        const campo = campoLegible(d.campo);
+        return campo ? `${campo}: ${d.mensaje}` : d.mensaje;
+      })
+      .join(" · ");
     return detalle ? `${error.message} ${detalle}` : error.message;
   }
   return error instanceof Error ? error.message : String(error);
@@ -469,13 +543,44 @@ export const api = {
 
   pedidos: (vista: "proximos" | "historial" = "proximos") => pedir<Pedido[]>("GET", `/pedidos?vista=${vista}`),
   crearPedidoEntrega: (
-    pedido: DatosPedido & { clienteId?: string; clienteNombre?: string; clienteTipo?: TipoCliente; celular?: string },
-  ) => pedir<Pedido & { clienteNuevo: boolean }>("POST", "/pedidos", pedido),
+    pedido: DatosPedido & {
+      clienteId?: string;
+      clienteNombre?: string;
+      clienteTipo?: TipoCliente;
+      celular?: string;
+      pago?: DatosPago; // ya pagó al anotarlo (D86)
+    },
+  ) => pedir<Pedido & { clienteNuevo: boolean; venta: PedidoCreado | null }>("POST", "/pedidos", pedido),
+  pagarPedido: (id: string, pago: DatosPago) =>
+    pedir<{ pedido: Pedido; venta: PedidoCreado; aviso: { enviado: boolean; error?: string } | null }>(
+      "POST",
+      `/pedidos/${id}/pago`,
+      pago,
+    ),
+  anularPago: (id: string) => pedir<Pedido>("DELETE", `/pedidos/${id}/pago`),
+  comprobantePedido: (id: string) => pedir<{ comprobante: string }>("GET", `/pedidos/${id}/comprobante`),
+  gastosFijos: () => pedir<{ gastosFijos: string }>("GET", "/configuracion/gastos-fijos"),
+  guardarGastosFijos: (gastosFijos: string) =>
+    pedir<{ gastosFijos: string }>("PUT", "/configuracion/gastos-fijos", { gastosFijos }),
+  configAgente: () => pedir<{ numerosPrueba: string[] }>("GET", "/agente/config"),
+  guardarConfigAgente: (numerosPrueba: string[]) =>
+    pedir<{ numerosPrueba: string[] }>("PUT", "/agente/config", { numerosPrueba }),
+  adjuntoAtencion: (id: string) => pedir<{ adjunto: string }>("GET", `/atenciones/${id}/adjunto`),
   editarPedidoEntrega: (id: string, datos: Partial<DatosPedido>) => pedir<Pedido>("PATCH", `/pedidos/${id}`, datos),
   cambiarEstadoPedido: (id: string, estado: EstadoPedido, motivo?: string) =>
-    pedir<{ pedido: Pedido; venta: PedidoCreado | null }>("POST", `/pedidos/${id}/estado`, { estado, motivo }),
+    pedir<{
+      pedido: Pedido;
+      venta: PedidoCreado | null;
+      ventaAnulada?: boolean;
+      alertas?: PedidoCreado["alertas"]; // stock bajo al descontar los insumos (D87)
+    }>("POST", `/pedidos/${id}/estado`, {
+      estado,
+      motivo,
+    }),
   borrarPedidoEntrega: (id: string) => pedir<{ eliminado: string }>("DELETE", `/pedidos/${id}`),
   atenciones: (estado: "PENDIENTE" | "RESUELTA" = "PENDIENTE") => pedir<Atencion[]>("GET", `/atenciones?estado=${estado}`),
+  enviarCostoEnvio: (id: string, costoEnvio: string) =>
+    pedir<{ costoEnvio: number; enviado: boolean; error?: string }>("POST", `/atenciones/${id}/costo-envio`, { costoEnvio }),
   resolverAtencion: (id: string) => pedir<{ resueltas: number }>("POST", `/atenciones/${id}/resolver`),
 
   clientes: (filtro: { tipo?: TipoCliente } = {}) => {

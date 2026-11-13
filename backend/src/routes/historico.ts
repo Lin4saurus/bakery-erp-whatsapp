@@ -123,7 +123,9 @@ historicoRouter.patch("/:id", async (req, res) => {
   const valor = datos.valor ?? venta.valor;
   const costo = venta.costo === null ? null : venta.costo.mul(cantidad).div(venta.cantidad);
   const utilidad =
-    venta.utilidad === null ? null : venta.utilidad.add(valor.sub(venta.valor)).sub((costo ?? venta.costo ?? cero).sub(venta.costo ?? cero));
+    venta.utilidad === null
+      ? null
+      : venta.utilidad.add(valor.sub(venta.valor)).sub((costo ?? venta.costo ?? cero).sub(venta.costo ?? cero));
 
   const actualizada = await prisma.ventaHistorica.update({
     where: { id },

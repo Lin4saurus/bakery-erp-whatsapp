@@ -17,8 +17,9 @@ export const notFoundHandler: RequestHandler = (req, res) => {
   res.status(404).json({ error: `Ruta no encontrada: ${req.method} ${req.path}` });
 };
 
-const esJsonMalFormado = (error: unknown): boolean =>
-  typeof error === "object" && error !== null && "type" in error && error.type === "entity.parse.failed";
+const tipoDeError = (error: unknown): unknown =>
+  typeof error === "object" && error !== null && "type" in error ? error.type : undefined;
+const esJsonMalFormado = (error: unknown): boolean => tipoDeError(error) === "entity.parse.failed";
 
 // Express 5 envía aquí también los errores de los handlers async.
 export const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
@@ -31,6 +32,10 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, _ne
       error: "Datos inválidos.",
       detalles: error.issues.map((issue) => ({ campo: issue.path.join("."), mensaje: issue.message })),
     });
+    return;
+  }
+  if (tipoDeError(error) === "entity.too.large") {
+    res.status(413).json({ error: "Lo que se envió es demasiado grande." });
     return;
   }
   if (esJsonMalFormado(error)) {

@@ -2,8 +2,8 @@ import type { Producto, Venta } from "../../api";
 
 // Indicador del Dashboard. Solo para mostrar: los montos guardados los calcula la API con Decimal.
 
-// TODO: Conectar con módulo de gastos fijos
-export const GASTOS_FIJOS_MENSUALES = 300; // Bs, valor de prueba
+// Los gastos fijos del mes los escribe la dueña en la tarjeta (D103); Bs 300 es solo el valor inicial.
+export const GASTOS_FIJOS_INICIALES = 300;
 
 const suma = (ventas: Venta[], campo: "totalVenta" | "costoTotal" | "cantidad"): number =>
   ventas.reduce((total, v) => total + Number(v[campo]), 0);

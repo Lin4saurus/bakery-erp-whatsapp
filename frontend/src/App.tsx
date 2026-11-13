@@ -26,6 +26,7 @@ import { Pedidos } from "./pantallas/Pedidos";
 import { Atenciones } from "./pantallas/Atenciones";
 import { api } from "./api";
 import { urgentes } from "./pedidos";
+import { conectarAvisos } from "./avisos";
 import "./App.css";
 
 const pantallas = {
@@ -102,15 +103,24 @@ export function App() {
         .catch(() => undefined);
     };
     revisar();
-    const reloj = window.setInterval(revisar, 60_000);
+    // Avisos en vivo del servidor (D88): un chat nuevo en Atención o un pedido de WhatsApp se ven al instante.
+    const desconectar = conectarAvisos();
+    const reloj = window.setInterval(revisar, 60_000); // respaldo por si la conexión en vivo falla
     window.addEventListener("hashchange", revisar);
-    window.addEventListener("dulzura:avisos", revisar); // una pantalla resolvió algo
+    window.addEventListener("dulzura:avisos", revisar); // aviso del servidor o una pantalla resolvió algo
     return () => {
+      desconectar();
       window.clearInterval(reloj);
       window.removeEventListener("hashchange", revisar);
       window.removeEventListener("dulzura:avisos", revisar);
     };
   }, []);
+
+  // La pestaña del navegador también avisa: «(2) Dulzura…» si hay chats esperando a la dueña.
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\) /, "");
+    document.title = chatsEsperando > 0 ? `(${chatsEsperando}) ${base}` : base;
+  }, [chatsEsperando]);
 
   // El hash permite volver con "atrás" y recargar sin perder la pantalla.
   useEffect(() => {

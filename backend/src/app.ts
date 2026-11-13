@@ -10,6 +10,9 @@ import { gastosRouter } from "./routes/gastos";
 import { clientesRouter } from "./routes/clientes";
 import { pedidosRouter } from "./routes/pedidos";
 import { atencionesRouter } from "./routes/atenciones";
+import { avisarAlCambiar, eventosRouter } from "./routes/eventos";
+import { agenteRouter } from "./routes/agente";
+import { configuracionRouter } from "./routes/configuracion";
 import { errorHandler, notFoundHandler } from "./errors";
 
 // Frontend compilado (`npm run web:build`). En desarrollo lo sirve Vite.
@@ -17,7 +20,10 @@ const FRONTEND_DIST = path.resolve(__dirname, "../../frontend/dist");
 
 export function createApp(): Express {
   const app = express();
-  app.use(express.json());
+  // Solo las dos rutas que reciben el comprobante de pago (foto o PDF en base64, D86) aceptan hasta 15 MB; el resto,
+  // 100 kB. Un cuerpo enorme en cualquier otra ruta se corta antes de llegar a Zod (S4, AUDITORIA.md).
+  app.use(["/api/pedidos/pago-whatsapp", "/api/pedidos/:id/pago"], express.json({ limit: "15mb" }));
+  app.use(express.json({ limit: "100kb" }));
 
   app.get("/api/salud", (_req, res) => {
     res.json({ ok: true });
@@ -29,8 +35,13 @@ export function createApp(): Express {
   app.use("/api/historico", historicoRouter);
   app.use("/api/gastos", gastosRouter);
   app.use("/api/clientes", clientesRouter);
-  app.use("/api/pedidos", pedidosRouter);
-  app.use("/api/atenciones", atencionesRouter);
+  // Pedidos y Atención avisan a las páginas abiertas cuando cambian (D88); un pago por WhatsApp puede crear
+  // una atención, y resolver una puede venir de confirmar un pago: se avisan las dos.
+  app.use("/api/pedidos", avisarAlCambiar("pedidos", "atenciones"), pedidosRouter);
+  app.use("/api/atenciones", avisarAlCambiar("atenciones", "pedidos"), atencionesRouter);
+  app.use("/api/eventos", eventosRouter);
+  app.use("/api/agente", agenteRouter);
+  app.use("/api/configuracion", configuracionRouter);
 
   if (existsSync(FRONTEND_DIST)) {
     // index.html se revisa siempre, para que una versión nueva se vea al recargar;

@@ -49,9 +49,33 @@
   margin-top: var(--space-1);
 }
 
+/* Barra del pedido para pantallas angostas (U2). */
+.caja__barra-movil {
+  display: none;
+}
+
 @media (max-width: 1200px) {
   .caja {
     grid-template-columns: 1fr;
+    padding-bottom: 64px; /* lugar para la barra */
+  }
+
+  .caja__barra-movil {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 12px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    box-shadow: 0 6px 20px rgb(0 0 0 / 25%);
+    font-size: 14px;
   }
 }
 
@@ -341,31 +365,14 @@
 }
 
 /* Cliente nuevo: se elige si se guarda como minorista (por defecto) o mayorista. */
-.caja__tipo-nuevo {
-  display: inline-flex;
-  margin-top: 6px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
+/* Pedido para entregar después (D98). */
+.caja__pago {
+  display: grid;
+  gap: 6px;
 }
 
-.caja__tipo-opcion {
-  border: 0;
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  padding: 6px 16px;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
+.caja__fila {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
-
-.caja__tipo-opcion + .caja__tipo-opcion {
-  border-left: 1px solid var(--color-border);
-}
-
-.caja__tipo-opcion--elegida {
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  font-weight: 600;
-}
-

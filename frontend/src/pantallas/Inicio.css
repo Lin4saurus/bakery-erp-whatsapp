@@ -293,3 +293,19 @@
     white-space: normal;
   }
 }
+
+/* Aviso del modo prueba del agente (D101). */
+.inicio-prueba {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.inicio-prueba__botones {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}

@@ -1,0 +1,58 @@
+/* Botones de opción del ERP (M5): un solo estilo para «Recoge / Delivery», «¿Ya pagó?», tipo de cliente… */
+.opciones {
+  display: grid;
+  gap: 6px;
+}
+
+.opciones__grupo {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  justify-self: start;
+}
+
+.opciones__grupo--completo {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-self: stretch;
+}
+
+.opciones__opcion {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.opciones__grupo--completo .opciones__opcion {
+  flex: 1;
+  padding: 7px 8px;
+}
+
+.opciones__opcion + .opciones__opcion {
+  border-left: 1px solid var(--color-border);
+}
+
+.opciones__opcion svg {
+  font-size: 16px;
+}
+
+.opciones__opcion--elegida {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.opciones__opcion:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}

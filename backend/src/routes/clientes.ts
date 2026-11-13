@@ -18,7 +18,13 @@ const clienteSchema = z.object({
   nombre,
   tipo: z.nativeEnum(TipoCliente).default(TipoCliente.MINORISTA),
   celular: textoOpcional(30),
-  email: z.string().trim().email("Correo inválido.").nullable().optional().or(z.literal("").transform(() => null)),
+  email: z
+    .string()
+    .trim()
+    .email("Correo inválido.")
+    .nullable()
+    .optional()
+    .or(z.literal("").transform(() => null)),
   direccion: textoOpcional(200),
 });
 const actualizarSchema = clienteSchema
@@ -61,7 +67,27 @@ export const clientesRouter = Router();
 
 clientesRouter.get("/", async (req, res) => {
   const { tipo } = filtrosSchema.parse(req.query);
-  res.json(await prisma.cliente.findMany({ where: { tipo }, include: conPrecios, orderBy: [{ tipo: "asc" }, { nombre: "asc" }] }));
+  res.json(
+    await prisma.cliente.findMany({ where: { tipo }, include: conPrecios, orderBy: [{ tipo: "asc" }, { nombre: "asc" }] }),
+  );
+});
+
+// El agente de WhatsApp busca solo al cliente que escribe (N3, D101), en vez de bajar la lista entera en cada
+// mensaje. Mismo criterio que antes en n8n: los últimos 8 dígitos y, si hay varios, el primero activo de la lista.
+// Siempre responde un objeto (con cliente null si no existe) para que el flujo de n8n siga.
+clientesRouter.get("/por-celular/:celular", async (req, res) => {
+  const clave = z
+    .string()
+    .transform((t) => t.replace(/\D/g, "").slice(-8))
+    .refine((t) => t.length >= 7, "El celular debe tener al menos 7 dígitos.")
+    .parse(req.params.celular);
+  const candidatos = await prisma.cliente.findMany({
+    where: { celular: { contains: clave.slice(-6) } },
+    include: conPrecios,
+    orderBy: [{ tipo: "asc" }, { nombre: "asc" }],
+  });
+  const iguales = candidatos.filter((c) => c.celular && c.celular.replace(/\D/g, "").slice(-8) === clave);
+  res.json({ cliente: iguales.find((c) => c.activo) ?? null });
 });
 
 clientesRouter.get("/:id", async (req, res) => {
@@ -89,7 +115,10 @@ clientesRouter.patch("/:id", async (req, res) => {
 async function mayorista(id: string) {
   const cliente = await buscar(id);
   if (cliente.tipo !== TipoCliente.MAYORISTA) {
-    throw new AppError(422, `"${cliente.nombre}" es minorista: paga el precio de venta. Cámbialo a mayorista para acordar precios.`);
+    throw new AppError(
+      422,
+      `"${cliente.nombre}" es minorista: paga el precio de venta. Cámbialo a mayorista para acordar precios.`,
+    );
   }
   return cliente;
 }

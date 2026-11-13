@@ -373,6 +373,80 @@
 1. Avisar por WhatsApp al cliente cuando su pedido pasa a «Listo».
 2. Login, roles y clave para la API.
 
+## 2026-11-12 — El cliente paga primero: pago por QR y comprobantes (D86)
+**Hecho**
+- Los pedidos nacen «Por pagar» y se agendan al pagar; la venta y el stock se registran con el pago, no al entregar.
+- El agente manda el QR (el mismo del agente de TikTok) y lee los comprobantes (foto o PDF) con Gemini; el ERP confirma solo los que cuadran y manda los dudosos a Atención con el comprobante. 95/95 tests; probado en una copia y publicado.
+
+**Próximos pasos sugeridos**
+1. Probar con un comprobante real desde un celular.
+2. Avisar por WhatsApp al cliente cuando su pedido pasa a «Listo».
+
+## 2026-11-12 — Los insumos bajan al empezar a preparar (D87)
+**Hecho**
+- El pago registra la venta; los insumos de la receta se descuentan al tocar «Empezar a preparar» y vuelven con «Deshacer». Cancelar en preparación no devuelve insumos (ya se usaron).
+
+## 2026-11-13 — Ningún pago se confirma solo (D91)
+**Hecho**
+- Como en el agente de TikTok, la IA lee el comprobante y la dueña confirma. Si cuadra: «Pago por confirmar» en Atención y «¡Gracias por tu compra!» al cliente. Si no: «⚠ Posible estafa» con las incongruencias (incluye imagen retocada y nro. de operación repetido). 97/97 tests; probado en una copia y publicado en n8n.
+
+**Próximos pasos sugeridos**
+1. Probar con un comprobante real desde un celular.
+
+## 2026-11-13 — Delivery: el resumen llega con el envío (D92)
+**Hecho**
+- En un delivery el agente solo avisa que la repostera cotiza el envío; cuando ella escribe el costo, el cliente recibe el resumen completo con el envío y «¿Confirmas tu pedido?», y recién entonces el QR.
+
+## 2026-11-13 — Comprobantes sin contenido y fecha del pago (D93)
+**Hecho**
+- Un PDF de comprobante llegó sin contenido y el agente respondió «solo leo mensajes escritos»: ahora lo descarga de Evolution y lo lee. Un comprobante con fecha vieja o futura queda como «Posible estafa».
+
+## 2026-11-13 — Incongruencias en lista y saldo incompleto (D94)
+**Hecho**
+- Atención muestra las incongruencias en lista, sin números de pedido; el monto incompleto va resaltado y el agente le pide el saldo al cliente. Solo se atiende el número de prueba.
+
+**Próximos pasos sugeridos**
+1. Antes de producción, quitar el modo prueba desde el Inicio del ERP (antes era `SOLO_NUMEROS_DE_PRUEBA` en n8n, D101) y poner el nombre completo de la repostera como titular del QR.
+
+## 2026-11-13 — Sprint 4 de la auditoría: orden y deuda (D103)
+**Hecho**
+- Gastos fijos editables en el Inicio, botones de opción unificados y manejables con teclado, barra del pedido en el celular, errores legibles, nombres con guion, respaldos escalonados y limpieza de código muerto. Las 4 etapas de la auditoría están completas.
+**Pendiente**
+- Quitar `Producto.disponible`; evaluar Prisma 7 antes del .exe (D2); guardar los comprobantes fuera de la base cuando haya volumen (B3).
+
+## 2026-11-13 — Sprint 3 de la auditoría: rendimiento y precisión (D102)
+**Hecho**
+- Listas sin comprobantes, costeo con una sola consulta, recargas sin pisarse, índices en Atención y verificación de pagos con Decimal en su propio servicio. De paso se corrigió una demora de ~200 ms por pedido que dejó el sprint 1.
+
+## 2026-11-13 — Sprint 2 de la auditoría: el agente no falla en silencio (D101)
+**Hecho**
+- Aviso por WhatsApp a la dueña cuando el agente falla, memoria de chats de 7 días, modo prueba manejado desde el ERP (con aviso en Inicio) y búsqueda del cliente por celular.
+**Pendiente**
+- Poner en `configuracion_pago.whatsapp_vendedora` el número real de la repostera (hoy es el de prueba).
+
+## 2026-11-13 — Sprint 1 de la auditoría: seguridad (D99)
+**Hecho**
+- Auditoría completa en AUDITORIA.md. Sprint 1: comprobantes solo foto/PDF, confirmación de «Llegó el pago», límite de 15 MB solo donde hace falta y ERP cerrado a la red.
+**Pendiente**
+- Hecho después: n8n, Evolution y Postgres solo en 127.0.0.1 (contenedores de n8n-host recreados; n8n pasó a la hora de La Paz).
+- Hecho después (D100): los pedidos demo se quedan para la defensa y sus ventas no suman en los totales.
+
+## 2026-11-13 — Los pedidos se anotan en Caja (D98)
+**Hecho**
+- Caja reemplaza a «Nuevo pedido»: además de la venta del momento, anota pedidos para otro día o por delivery, con nota y si ya pagó.
+
+## 2026-11-13 — «Ya está agendado» al confirmar el pago (D97)
+**Hecho**
+- Al tocar «Llegó el pago» en Atención, el cliente recibe por WhatsApp que su pedido quedó agendado, con el día y la hora, y el agradecimiento.
+
+## 2026-11-13 — Pago bueno tras uno rechazado (D96)
+**Hecho**
+- El comprobante real no se registró porque el ERP estaba apagado; ahora n8n reintenta. El chat se trabó por un 503 de Gemini (mucha demanda): ahora hay un modelo de respaldo y un aviso al cliente si la IA falla. Un pago válido convierte la tarjeta de estafa en «Pago por confirmar», y el destino se comprueba por nombre o por la cuenta del QR (61317418).
+
+## 2026-11-13 — Filtro anti-estafas: fecha de hoy y cero confianza (D95)
+**Hecho**
+- Solo vale un comprobante de hoy; los rechazados no descuentan nada y el cliente recibe «❌ COMPROBANTE RECHAZADO» con el motivo y su saldo. Nuevas banderas: pago pendiente/rechazado, marcas de agua y pagos fraccionados.
+
 ## Plan anterior (cumplido)
 1. `package.json` del backend con Prisma + TypeScript.
 2. `seed.ts` con insumos, rellenos y 5 queques.

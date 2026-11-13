@@ -1,7 +1,9 @@
 import { useState, type KeyboardEvent } from "react";
-import { api, mensajeDeError, type Cliente, type Producto, type TipoCliente } from "../api";
+import { MdOutlineDeliveryDining, MdOutlineStorefront } from "react-icons/md";
+import { api, mensajeDeError, type Cliente, type MetodoPago, type Producto, type TipoCliente, type TipoEntrega } from "../api";
 import { bs, cantidad, diaLargo, esNumeroValido, hoyISO, nombreCorto, normalizarNumero } from "../formato";
-import { Aviso, BuscadorCliente, Button, Campo, Cargando, Panel, TipoClienteBadge, mismoNombre, useDatos } from "../ui";
+import { nombreDia, nombreMetodo } from "../pedidos";
+import { Aviso, BuscadorCliente, Button, Campo, Cargando, Opciones, Panel, TipoClienteBadge, mismoNombre, useDatos } from "../ui";
 import { precioParaCliente } from "../precios";
 import { guardarUltimaVenta } from "../ultimaVenta";
 import "./Caja.css";
@@ -34,10 +36,19 @@ export function Caja() {
   const [tipoNuevo, setTipoNuevo] = useState<TipoCliente>("MINORISTA");
   const [fechaVenta, setFechaVenta] = useState(hoy);
   const esOtroDia = fechaVenta !== hoy;
+  // Ahora: venta en el local (se lo lleva). Para entregar: pedido con día de entrega, recojo o delivery y pago (D98).
+  const [modo, setModo] = useState<"AHORA" | "ENTREGA">("AHORA");
+  const paraEntregar = modo === "ENTREGA";
+  const [fechaEntrega, setFechaEntrega] = useState(hoy);
+  const [horaEntrega, setHoraEntrega] = useState("");
+  const [entrega, setEntrega] = useState<TipoEntrega>("RECOJO");
+  const [ubicacion, setUbicacion] = useState("");
+  const [costoEnvio, setCostoEnvio] = useState("");
+  const [nota, setNota] = useState("");
+  const [pago, setPago] = useState<MetodoPago | "NO">("QR");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
-  const [errorCatalogo, setErrorCatalogo] = useState<string | null>(null);
 
   const clienteSel: Cliente | null =
     clientes.datos?.find((c) => c.id === clienteId) ??
@@ -144,9 +155,56 @@ export function Caja() {
   const ganancia = total - costo;
   const unidades = filas.reduce((t, f) => t + f.n, 0);
 
-  const fechaValida = /^\d{4}-\d{2}-\d{2}$/.test(fechaVenta) && fechaVenta <= hoy;
+  const fechaValida = paraEntregar
+    ? /^\d{4}-\d{2}-\d{2}$/.test(fechaEntrega) && fechaEntrega >= hoy
+    : /^\d{4}-\d{2}-\d{2}$/.test(fechaVenta) && fechaVenta <= hoy;
+  const envioValido = !paraEntregar || entrega !== "DELIVERY" || costoEnvio.trim() === "" || esNumeroValido(costoEnvio);
   const lineasValidas = filas.length > 0 && filas.every((f) => f.n > 0 && esNumeroValido(f.precio));
-  const datosValidos = lineasValidas && fechaValida && nombreCliente.trim() !== "" && celularValido;
+  const datosValidos = lineasValidas && fechaValida && envioValido && nombreCliente.trim() !== "" && celularValido;
+
+  const limpiar = () => {
+    setLineas([]);
+    setNombreCliente("");
+    setCelular("");
+    setClienteId("");
+    setFechaEntrega(hoy);
+    setHoraEntrega("");
+    setEntrega("RECOJO");
+    setUbicacion("");
+    setCostoEnvio("");
+    setNota("");
+    setPago("QR");
+  };
+
+  // Pedido para entregar otro día o por delivery: queda en Pedidos (agendado si ya pagó).
+  const anotarPedido = async () => {
+    const creado = await api.crearPedidoEntrega({
+      lineas: filas.map((f) => ({
+        productoId: f.productoId,
+        cantidad: String(f.n),
+        precioUnitario: f.acordado ? undefined : normalizarNumero(f.precio),
+      })),
+      clienteId: clienteSel?.id,
+      clienteNombre: clienteSel ? undefined : nombreCliente.trim(),
+      clienteTipo: clienteSel ? undefined : tipoNuevo,
+      celular: celular.trim(),
+      fechaEntrega,
+      horaEntrega: horaEntrega || null,
+      nota: nota.trim() || null,
+      entrega,
+      ubicacion: entrega === "DELIVERY" ? ubicacion.trim() || null : null,
+      costoEnvio: entrega === "DELIVERY" && costoEnvio.trim() !== "" ? normalizarNumero(costoEnvio) : null,
+      pago: pago === "NO" ? undefined : { metodo: pago },
+    });
+    setMensaje(
+      `Pedido N.º ${creado.numero} de ${creado.cliente.nombre} (${bs(creado.total)}) ` +
+        (creado.venta
+          ? `pagado (${nombreMetodo[pago as MetodoPago]}) y agendado para ${nombreDia(creado.fechaEntrega).toLowerCase()}: se registró la venta.`
+          : "anotado: queda en Pedidos esperando el pago para agendarse.") +
+        (creado.clienteNuevo ? " El cliente quedó guardado en Clientes." : ""),
+    );
+    limpiar();
+  };
 
   const registrar = async () => {
     if (!datosValidos) return;
@@ -154,6 +212,10 @@ export function Caja() {
     setError(null);
     setMensaje(null);
     try {
+      if (paraEntregar) {
+        await anotarPedido();
+        return;
+      }
       const pedido = await api.crearPedido({
         lineas: filas.map((f) => ({
           productoId: f.productoId,
@@ -192,7 +254,6 @@ export function Caja() {
       </div>
 
       {mensaje && <Aviso tipo="ok">{mensaje}</Aviso>}
-      {errorCatalogo && <Aviso tipo="error">{errorCatalogo}</Aviso>}
       {productos.error && <Aviso tipo="error">{productos.error}</Aviso>}
 
       <div className="caja">
@@ -340,22 +401,19 @@ export function Caja() {
               ) : clienteNuevo ? (
                 <>
                   <p className="secundario caja__cliente-detalle">
-                    <span className="etiqueta etiqueta-positiva">Cliente nuevo</span> Se guardará en Clientes con su celular, como:
+                    <span className="etiqueta etiqueta-positiva">Cliente nuevo</span> Se guardará en Clientes con su celular,
+                    como:
                   </p>
-                  <div className="caja__tipo-nuevo" role="radiogroup" aria-label="Tipo del cliente nuevo">
-                    {(["MINORISTA", "MAYORISTA"] as const).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        role="radio"
-                        aria-checked={tipoNuevo === t}
-                        className={`caja__tipo-opcion ${tipoNuevo === t ? "caja__tipo-opcion--elegida" : ""}`}
-                        onClick={() => setTipoNuevo(t)}
-                      >
-                        {t === "MINORISTA" ? "Minorista" : "Mayorista"}
-                      </button>
-                    ))}
-                  </div>
+                  <Opciones
+                    etiqueta="Tipo del cliente nuevo"
+                    mostrarEtiqueta={false}
+                    valor={tipoNuevo}
+                    alCambiar={setTipoNuevo}
+                    opciones={[
+                      { valor: "MINORISTA", texto: "Minorista" },
+                      { valor: "MAYORISTA", texto: "Mayorista" },
+                    ]}
+                  />
                 </>
               ) : (
                 <p className="secundario caja__cliente-detalle">Sin nombre y celular no se puede registrar el pedido.</p>
@@ -363,6 +421,7 @@ export function Caja() {
             </div>
           </Panel>
 
+          <div id="caja-pedido" />
           <Panel titulo={filas.length ? `Pedido · ${filas.length} producto(s)` : "Pedido"}>
             <div className="panel-cuerpo">
               {error && <Aviso tipo="error">{error}</Aviso>}
@@ -410,32 +469,116 @@ export function Caja() {
                   )}
 
                   <div className="caja__separador" />
-                  <Campo
-                    etiqueta="Fecha del pedido"
-                    ayuda={esOtroDia && fechaValida ? undefined : "Cámbiala si olvidaste cargar un pedido de otro día."}
-                  >
-                    <div className="caja__fecha">
-                      <input type="date" value={fechaVenta} max={hoy} onChange={(e) => setFechaVenta(e.target.value)} />
-                      {esOtroDia && (
-                        <Button tamano="chico" variante="texto" onClick={() => setFechaVenta(hoy)}>
-                          Volver a hoy
-                        </Button>
+                  <Opciones
+                    etiqueta="¿Cuándo se lo lleva?"
+                    ancho="completo"
+                    valor={modo}
+                    alCambiar={setModo}
+                    opciones={[
+                      { valor: "AHORA", texto: "Ahora, en el local" },
+                      { valor: "ENTREGA", texto: "Para entregar después" },
+                    ]}
+                  />
+
+                  {paraEntregar ? (
+                    <>
+                      <div className="caja__fila">
+                        <Campo etiqueta="Día de entrega">
+                          <input type="date" value={fechaEntrega} min={hoy} onChange={(e) => setFechaEntrega(e.target.value)} />
+                        </Campo>
+                        <Campo etiqueta="Hora (opcional)">
+                          <input type="time" value={horaEntrega} onChange={(e) => setHoraEntrega(e.target.value)} />
+                        </Campo>
+                      </div>
+                      {!fechaValida && <Aviso tipo="error">Elige hoy o un día que todavía no pasó.</Aviso>}
+                      <Opciones
+                        etiqueta="Entrega"
+                        ancho="completo"
+                        valor={entrega}
+                        alCambiar={setEntrega}
+                        opciones={[
+                          { valor: "RECOJO", texto: "Recoge en el local", icono: MdOutlineStorefront },
+                          { valor: "DELIVERY", texto: "Delivery", icono: MdOutlineDeliveryDining },
+                        ]}
+                      />
+                      {entrega === "DELIVERY" && (
+                        <>
+                          <Campo etiqueta="Ubicación (Google Maps o dirección)">
+                            <input
+                              value={ubicacion}
+                              onChange={(e) => setUbicacion(e.target.value)}
+                              placeholder="https://maps.app.goo.gl/…"
+                            />
+                          </Campo>
+                          <Campo etiqueta="Costo del envío (Bs, opcional)" ayuda="Lo paga el cliente aparte; no suma al total.">
+                            <input
+                              value={costoEnvio}
+                              onChange={(e) => setCostoEnvio(e.target.value)}
+                              inputMode="decimal"
+                              placeholder="Por cotizar"
+                              aria-invalid={!envioValido}
+                            />
+                          </Campo>
+                        </>
                       )}
-                    </div>
-                  </Campo>
-                  {esOtroDia && fechaValida && (
-                    <Aviso tipo="alerta">
-                      Se cargará como pedido del <strong>{diaLargo(fechaVenta)}</strong>. No sumará en la «Caja de hoy» del Inicio.
-                    </Aviso>
+                      <Campo etiqueta="Nota (opcional)">
+                        <textarea
+                          value={nota}
+                          onChange={(e) => setNota(e.target.value)}
+                          rows={2}
+                          placeholder="Ej. con dedicatoria «Feliz cumple Ana», sin nueces…"
+                        />
+                      </Campo>
+                      <div className="caja__pago">
+                        <Opciones
+                          etiqueta="¿Ya pagó?"
+                          ancho="completo"
+                          valor={pago}
+                          alCambiar={setPago}
+                          opciones={[
+                            { valor: "QR", texto: "Sí, por QR" },
+                            { valor: "EFECTIVO", texto: "Sí, en efectivo" },
+                            { valor: "NO", texto: "Todavía no" },
+                          ]}
+                        />
+                        <p className="secundario caja__cliente-detalle">
+                          {pago === "NO"
+                            ? "Queda en Pedidos esperando el pago; se agenda cuando lo registres."
+                            : "Se registra la venta y el pedido queda agendado en Pedidos."}
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Campo
+                        etiqueta="Fecha del pedido"
+                        ayuda={esOtroDia && fechaValida ? undefined : "Cámbiala si olvidaste cargar un pedido de otro día."}
+                      >
+                        <div className="caja__fecha">
+                          <input type="date" value={fechaVenta} max={hoy} onChange={(e) => setFechaVenta(e.target.value)} />
+                          {esOtroDia && (
+                            <Button tamano="chico" variante="texto" onClick={() => setFechaVenta(hoy)}>
+                              Volver a hoy
+                            </Button>
+                          )}
+                        </div>
+                      </Campo>
+                      {esOtroDia && fechaValida && (
+                        <Aviso tipo="alerta">
+                          Se cargará como pedido del <strong>{diaLargo(fechaVenta)}</strong>. No sumará en la «Caja de hoy» del
+                          Inicio.
+                        </Aviso>
+                      )}
+                      {!fechaValida && <Aviso tipo="error">Elige una fecha de hoy o anterior.</Aviso>}
+                    </>
                   )}
-                  {!fechaValida && <Aviso tipo="error">Elige una fecha de hoy o anterior.</Aviso>}
                   {/* Sin fiados (D74): todo pedido se cobra al momento. */}
                   <div className="caja__separador" />
 
                   <div className="resumen-venta">
                     <span className="secundario">Unidades</span>
                     <span>{cantidad(unidades)}</span>
-                    <span>Total a cobrar</span>
+                    <span>{paraEntregar && pago === "NO" ? "Total del pedido" : "Total a cobrar"}</span>
                     <span className="total">{bs(total)}</span>
                   </div>
                   {ganancia < 0 && <Aviso tipo="alerta">Con estos precios se vende por debajo del costo.</Aviso>}
@@ -446,7 +589,9 @@ export function Caja() {
                   >
                     {guardando
                       ? "Registrando…"
-                      : `Registrar pedido${esOtroDia ? " de otro día" : ""} · ${bs(total)}`}
+                      : paraEntregar
+                        ? `Anotar pedido para entregar · ${bs(total)}`
+                        : `Registrar pedido${esOtroDia ? " de otro día" : ""} · ${bs(total)}`}
                   </button>
                   <div className="caja__quitar">
                     <Button variante="texto" tamano="chico" onClick={() => setLineas([])}>
@@ -457,9 +602,25 @@ export function Caja() {
               )}
             </div>
           </Panel>
-
         </div>
       </div>
+
+      {/* En el celular o la tablet (una columna) el pedido queda debajo de todos los sabores: esta barra lo tiene
+          siempre a mano (U2, AUDITORIA.md). En pantallas anchas no se muestra. */}
+      {filas.length > 0 && (
+        <div className="caja__barra-movil">
+          <span>
+            {cantidad(unidades)} producto(s) · <strong>{bs(total)}</strong>
+          </span>
+          <Button
+            variante="exito"
+            tamano="chico"
+            onClick={() => document.getElementById("caja-pedido")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          >
+            Ver pedido
+          </Button>
+        </div>
+      )}
     </>
   );
 }

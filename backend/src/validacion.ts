@@ -5,8 +5,17 @@ import { Prisma } from "@prisma/client";
 z.setErrorMap((issue, ctx) => {
   if (ctx.data === undefined) return { message: "Es obligatorio." };
   switch (issue.code) {
-    case z.ZodIssueCode.invalid_type:
-      return { message: `Tipo inválido: se esperaba ${issue.expected}.` };
+    case z.ZodIssueCode.invalid_type: {
+      // En palabras de la dueña, no «se esperaba number» (U4).
+      const esperado: Record<string, string> = {
+        number: "Debe ser un número.",
+        string: "Debe ser un texto.",
+        boolean: "Debe ser sí o no.",
+        array: "Debe ser una lista.",
+        date: "Debe ser una fecha.",
+      };
+      return { message: esperado[issue.expected] ?? "Dato inválido." };
+    }
     case z.ZodIssueCode.invalid_union:
       return { message: "Debe ser un número válido." };
     case z.ZodIssueCode.invalid_enum_value:
@@ -60,6 +69,7 @@ export const normalizarNombre = (texto: string) =>
   texto
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[.\-_'’]/g, " ") // puntos y guiones cuentan como espacio (D45, S5): «María-José» = «Maria José»
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();

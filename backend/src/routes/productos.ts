@@ -4,7 +4,7 @@ import { CategoriaInsumo, TipoProducto, UnidadMedida, type Producto } from "@pri
 import { prisma } from "../prisma";
 import { AppError } from "../errors";
 import { crearRespaldo } from "../services/backup";
-import { calcularCostoProducto, verificarSinCiclos } from "../services/costeo";
+import { calcularCostoProducto, precargarCosteo, verificarSinCiclos, type MemoCosteo } from "../services/costeo";
 import { alMenosUnCampo, decimalNoNegativo, decimalPositivo, nombre, parseId } from "../validacion";
 
 const productoSchema = z.object({
@@ -37,8 +37,14 @@ const cantidadSchema = z.object({ cantidad: decimalPositivo });
 
 const filtrosSchema = z.object({
   tipo: z.nativeEnum(TipoProducto).optional(),
-  activo: z.enum(["true", "false"]).transform((valor) => valor === "true").optional(),
-  disponible: z.enum(["true", "false"]).transform((valor) => valor === "true").optional(),
+  activo: z
+    .enum(["true", "false"])
+    .transform((valor) => valor === "true")
+    .optional(),
+  disponible: z
+    .enum(["true", "false"])
+    .transform((valor) => valor === "true")
+    .optional(),
 });
 
 async function buscarProducto(id: number): Promise<Producto> {
@@ -47,10 +53,19 @@ async function buscarProducto(id: number): Promise<Producto> {
   return producto;
 }
 
-async function resumenConCosto(producto: Producto) {
+async function resumenConCosto(producto: Producto, memo?: MemoCosteo) {
   const { costoTanda, costoEmpaque, costoUnitario, costoPorUnidad, gananciaUnitaria, gananciaPorUnidad, margenPorcentaje } =
-    await calcularCostoProducto(prisma, producto.id);
-  return { ...producto, costoTanda, costoEmpaque, costoUnitario, costoPorUnidad, gananciaUnitaria, gananciaPorUnidad, margenPorcentaje };
+    await calcularCostoProducto(prisma, producto.id, [], memo);
+  return {
+    ...producto,
+    costoTanda,
+    costoEmpaque,
+    costoUnitario,
+    costoPorUnidad,
+    gananciaUnitaria,
+    gananciaPorUnidad,
+    margenPorcentaje,
+  };
 }
 
 export const productosRouter = Router();
@@ -60,8 +75,13 @@ export const productosRouter = Router();
 productosRouter.get("/", async (req, res) => {
   const { tipo, activo, disponible } = filtrosSchema.parse(req.query);
   // Las recetas borradas que tenían ventas (D63) no se listan en ningún lado.
-  const productos = await prisma.producto.findMany({ where: { tipo, activo, disponible, eliminado: false }, orderBy: { nombre: "asc" } });
-  res.json(await Promise.all(productos.map(resumenConCosto)));
+  const productos = await prisma.producto.findMany({
+    where: { tipo, activo, disponible, eliminado: false },
+    orderBy: { nombre: "asc" },
+  });
+  // Todas las recetas en una consulta y cada costo una vez por petición (R2).
+  const memo = await precargarCosteo(prisma);
+  res.json(await Promise.all(productos.map((p) => resumenConCosto(p, memo))));
 });
 
 productosRouter.get("/:id", async (req, res) => {
@@ -99,7 +119,10 @@ const tipoCategoriaSchema = z.object({ tipo: z.nativeEnum(TipoProducto).default(
 productosRouter.delete("/categorias/:categoria", async (req, res) => {
   const categoria = String(req.params.categoria).trim();
   const { tipo } = tipoCategoriaSchema.parse(req.query);
-  const productos = await prisma.producto.findMany({ where: { categoria, tipo, eliminado: false }, select: { id: true, nombre: true } });
+  const productos = await prisma.producto.findMany({
+    where: { categoria, tipo, eliminado: false },
+    select: { id: true, nombre: true },
+  });
   if (productos.length === 0) throw new AppError(404, `No existe la categoría "${categoria}".`);
   const ids = productos.map((p) => p.id);
 
@@ -145,7 +168,10 @@ productosRouter.delete("/categorias/:categoria", async (req, res) => {
 productosRouter.delete("/:id", async (req, res) => {
   const id = parseId(req.params.id);
   const producto = await buscarProducto(id);
-  const usadoEn = await prisma.componenteReceta.findMany({ where: { subProductoId: id }, include: { producto: { select: { nombre: true } } } });
+  const usadoEn = await prisma.componenteReceta.findMany({
+    where: { subProductoId: id },
+    include: { producto: { select: { nombre: true } } },
+  });
   if (usadoEn.length > 0) {
     throw new AppError(
       409,
@@ -186,7 +212,10 @@ productosRouter.put("/:id/receta", async (req, res) => {
   await buscarProducto(id);
 
   const insumoIds = receta.ingredientes.map((i) => i.insumoId);
-  const encontrados = await prisma.insumo.findMany({ where: { id: { in: insumoIds } }, select: { id: true, nombre: true, categoria: true } });
+  const encontrados = await prisma.insumo.findMany({
+    where: { id: { in: insumoIds } },
+    select: { id: true, nombre: true, categoria: true },
+  });
   const faltantes = insumoIds.filter((insumoId) => !encontrados.some((e) => e.id === insumoId));
   if (faltantes.length > 0) {
     throw new AppError(404, `No existen los insumos: ${faltantes.join(", ")}.`);

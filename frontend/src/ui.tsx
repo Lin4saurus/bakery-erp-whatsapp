@@ -10,5 +10,6 @@ export { Tarjeta } from "./components/ui/StatCard";
 export { TipoClienteBadge } from "./components/ui/TipoClienteBadge";
 export { BuscadorCliente, buscarClientes, mismoNombre } from "./components/ui/BuscadorCliente";
 export { Ventana } from "./components/ui/Ventana";
+export { Opciones, type Opcion } from "./components/ui/Opciones";
 
 export const Cargando = () => <p className="vacio">Cargando…</p>;

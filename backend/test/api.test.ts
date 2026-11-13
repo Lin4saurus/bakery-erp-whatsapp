@@ -15,6 +15,7 @@ import { Prisma } from "@prisma/client";
 import { productoDelSabor, repartirMonto, repartirSabores } from "../../database/prisma/sabores";
 
 process.env.DATABASE_URL = "file:./test.db";
+process.env.N8N_WEBHOOK_ENVIO = ""; // las pruebas no le escriben a n8n (D89)
 const CARPETA_RESPALDOS = mkdtempSync(path.join(os.tmpdir(), "dulzura-test-respaldos-"));
 process.env.BACKUP_DIR = CARPETA_RESPALDOS;
 process.env.BACKUP_KEEP = "2";
@@ -1881,12 +1882,12 @@ describe("Pedidos por entregar (D81)", () => {
     });
   };
 
-  test("anotar un pedido no es venta ni baja el stock; se lista en próximos con total y número", async () => {
+  test("anotar un pedido lo deja por pagar: no es venta ni baja el stock; se lista con total y número", async () => {
     const harinaAntes = await stockDe("Harina");
     const ventasAntes = (await api<ListaVentas>("GET", "/ventas")).body.ventas.length;
     const { status, body } = await nuevoPedido();
     assert.equal(status, 201);
-    assert.equal(body.estado, "PENDIENTE");
+    assert.equal(body.estado, "POR_PAGAR");
     assert.equal(body.origen, "MANUAL");
     assert.ok(body.numero >= 1);
     const esperado = body.lineas.reduce((t, l) => t.add(D(l.precioUnitario).mul(l.cantidad)), D(0));
@@ -1897,42 +1898,162 @@ describe("Pedidos por entregar (D81)", () => {
     assert.ok(proximos.some((p) => p.id === body.id));
     const segundo = await nuevoPedido();
     assert.equal(segundo.body.numero, body.numero + 1);
+    // Sin pago no se agenda ni se prepara (D86).
+    assert.equal((await api("POST", `/pedidos/${body.id}/estado`, { estado: "EN_PREPARACION" })).status, 409);
   });
 
-  test("avanza de estado; al entregar se registra la venta, baja el stock y pasa al historial", async () => {
+  test("desde Caja: un pedido para entregar guarda el precio con descuento y puede quedar pagado (D98)", async () => {
+    const queque = await productoPorNombre("Queque");
+    const { status, body } = await api<PedidoEntrega & { venta: unknown; lineas: { precioUnitario: string }[] }>(
+      "POST",
+      "/pedidos",
+      {
+        clienteNombre: "Cliente Caja D98",
+        celular: "70009898",
+        fechaEntrega: diaMas(2),
+        entrega: "DELIVERY",
+        ubicacion: "Calle 1",
+        lineas: [{ productoId: queque.id, cantidad: 2, precioUnitario: "10" }],
+        pago: { metodo: "EFECTIVO" },
+      },
+    );
+    assert.equal(status, 201);
+    assert.equal(body.estado, "PENDIENTE"); // pagado: agendado
+    assert.ok(cerca(body.lineas[0]?.precioUnitario ?? "0", "10"));
+    assert.ok(cerca(body.total, "20"));
+    assert.ok(body.venta);
+  });
+
+  test("agente: modo prueba guardado en el ERP y cliente buscado por celular (N3, N4, D101)", async () => {
+    // Sin configurar: atiende a todos.
+    assert.deepEqual((await api<{ numerosPrueba: string[] }>("GET", "/agente/config")).body.numerosPrueba, []);
+    const guardado = await api<{ numerosPrueba: string[] }>("PUT", "/agente/config", {
+      numerosPrueba: ["7000-1101", "70001101", "591 70001102"],
+    });
+    assert.deepEqual(guardado.body.numerosPrueba, ["70001101", "59170001102"]); // solo dígitos y sin repetidos
+    assert.equal((await api("PUT", "/agente/config", { numerosPrueba: ["123"] })).status, 400);
+    assert.deepEqual(
+      (await api<{ numerosPrueba: string[] }>("PUT", "/agente/config", { numerosPrueba: [] })).body.numerosPrueba,
+      [],
+    );
+
+    await nuevoPedido({ clienteNombre: "Cliente Celular D101", celular: "70001103" });
+    const hallado = await api<{ cliente: { nombre: string; precios: unknown[] } | null }>(
+      "GET",
+      "/clientes/por-celular/59170001103",
+    );
+    assert.equal(hallado.status, 200);
+    assert.equal(hallado.body.cliente?.nombre, "Cliente Celular D101");
+    assert.ok(Array.isArray(hallado.body.cliente?.precios));
+    const nadie = await api<{ cliente: null }>("GET", "/clientes/por-celular/59179999999");
+    assert.equal(nadie.status, 200);
+    assert.equal(nadie.body.cliente, null); // siempre un objeto, para que el flujo de n8n siga
+  });
+
+  test("las ventas de los pedidos demo no salen en las listas ni suman en los totales (B2, D100)", async () => {
+    const { prisma } = await import("../src/prisma");
+    const hoy = new Date().toLocaleDateString("sv-SE");
+    const antes = (await api<ListaVentas>("GET", `/ventas?desde=${hoy}&hasta=${hoy}`)).body;
+    const { body: demo } = await nuevoPedido({
+      clienteNombre: "Cliente Demo D100",
+      celular: "70001000",
+      pago: { metodo: "EFECTIVO" },
+    });
+    await prisma.pedido.update({ where: { id: demo.id }, data: { esDemo: true } });
+    const despues = (await api<ListaVentas>("GET", `/ventas?desde=${hoy}&hasta=${hoy}`)).body;
+    assert.equal(despues.ventas.length, antes.ventas.length);
+    assert.ok(cerca(despues.resumen.totalVenta, antes.resumen.totalVenta));
+    const reporte = (await api<{ nombre: string; totalVendido: string }[]>("GET", "/ventas/reporte-clientes")).body;
+    assert.ok(!reporte.some((c) => c.nombre === "Cliente Demo D100" && Number(c.totalVendido) > 0));
+    // Un pedido real del mismo día sí suma.
+    await nuevoPedido({ clienteNombre: "Cliente Real D100", celular: "70001001", pago: { metodo: "QR" } });
+    const conReal = (await api<ListaVentas>("GET", `/ventas?desde=${hoy}&hasta=${hoy}`)).body;
+    assert.ok(conReal.ventas.length > antes.ventas.length);
+  });
+
+  test("al pagar se registra la venta sin tocar el stock; al empezar a preparar bajan los insumos (D87)", async () => {
     const { body: pedido } = await nuevoPedido();
     const harinaAntes = await stockDe("Harina");
-    const preparando = await api<{ pedido: PedidoEntrega }>("POST", `/pedidos/${pedido.id}/estado`, { estado: "EN_PREPARACION" });
-    assert.equal(preparando.status, 200);
-    assert.equal(preparando.body.pedido.estado, "EN_PREPARACION");
-    assert.ok(cerca((await stockDe("Harina")).toString(), harinaAntes)); // preparar no descuenta
-    const entregado = await api<{ pedido: PedidoEntrega; venta: { pedidoId: string; totalVenta: string } }>(
+    const pagado = await api<{
+      pedido: PedidoEntrega & { pagado: boolean; metodoPago: string; insumosDescontadosEn: string | null };
+      venta: { pedidoId: string; totalVenta: string };
+    }>("POST", `/pedidos/${pedido.id}/pago`, { metodo: "EFECTIVO" });
+    assert.equal(pagado.status, 200);
+    assert.equal(pagado.body.pedido.estado, "PENDIENTE");
+    assert.equal(pagado.body.pedido.pagado, true);
+    assert.equal(pagado.body.pedido.metodoPago, "EFECTIVO");
+    assert.equal((pagado.body as { aviso?: unknown }).aviso, null); // sin avisarCliente no se escribe al cliente
+    assert.equal(pagado.body.pedido.insumosDescontadosEn, null);
+    assert.equal(pagado.body.pedido.ventaPedidoId, pagado.body.venta.pedidoId);
+    assert.ok(cerca(pagado.body.venta.totalVenta, pedido.total));
+    assert.ok(cerca((await stockDe("Harina")).toString(), harinaAntes)); // pagar no descuenta
+    const ventas = (await api<ListaVentas>("GET", "/ventas")).body.ventas;
+    assert.ok(ventas.some((v) => (v as unknown as { pedidoId: string }).pedidoId === pagado.body.venta.pedidoId));
+    assert.equal((await api("POST", `/pedidos/${pedido.id}/pago`, { metodo: "QR" })).status, 409); // ya pagado
+    // Desde Atención (avisarCliente): el ERP le pide a n8n el «ya está agendado»; en las pruebas n8n está apagado (D97).
+    const { body: otro } = await nuevoPedido();
+    const avisado = await api<{ aviso: { enviado: boolean } | null }>("POST", `/pedidos/${otro.id}/pago`, {
+      metodo: "QR",
+      avisarCliente: true,
+    });
+    assert.equal(avisado.status, 200);
+    assert.equal(avisado.body.aviso?.enviado, false);
+    // Un pedido pagado no cambia de productos ni se borra.
+    const queque = await productoPorNombre("Queque");
+    assert.equal((await api("PATCH", `/pedidos/${pedido.id}`, { lineas: [{ productoId: queque.id, cantidad: 9 }] })).status, 409);
+    assert.equal((await api("DELETE", `/pedidos/${pedido.id}`)).status, 409);
+
+    // Empezar a preparar: recién ahí bajan los insumos.
+    const preparando = await api<{ pedido: PedidoEntrega & { insumosDescontadosEn: string | null } }>(
       "POST",
       `/pedidos/${pedido.id}/estado`,
-      { estado: "ENTREGADO" },
+      { estado: "EN_PREPARACION" },
     );
+    assert.equal(preparando.status, 200);
+    assert.ok(preparando.body.pedido.insumosDescontadosEn);
+    const harinaPreparando = await stockDe("Harina");
+    assert.ok(harinaPreparando.lt(harinaAntes));
+    // Ya en preparación no se anula el pago: primero «Deshacer».
+    assert.equal((await api("DELETE", `/pedidos/${pedido.id}/pago`)).status, 409);
+    // Deshacer devuelve los insumos; volver a preparar los descuenta otra vez (una sola vez).
+    assert.equal((await api("POST", `/pedidos/${pedido.id}/estado`, { estado: "PENDIENTE" })).status, 200);
+    assert.ok(cerca((await stockDe("Harina")).toString(), harinaAntes));
+    await api("POST", `/pedidos/${pedido.id}/estado`, { estado: "EN_PREPARACION" });
+    await api("POST", `/pedidos/${pedido.id}/estado`, { estado: "LISTO" });
+    assert.ok(cerca((await stockDe("Harina")).toString(), harinaPreparando));
+
+    const entregado = await api<{ pedido: PedidoEntrega; venta: null }>("POST", `/pedidos/${pedido.id}/estado`, {
+      estado: "ENTREGADO",
+    });
     assert.equal(entregado.status, 200);
     assert.equal(entregado.body.pedido.estado, "ENTREGADO");
-    assert.equal(entregado.body.pedido.ventaPedidoId, entregado.body.venta.pedidoId);
-    assert.ok(cerca(entregado.body.venta.totalVenta, pedido.total));
-    assert.ok((await stockDe("Harina")).lt(harinaAntes));
-    const ventas = (await api<ListaVentas>("GET", "/ventas")).body.ventas;
-    assert.ok(ventas.some((v) => (v as unknown as { pedidoId: string }).pedidoId === entregado.body.venta.pedidoId));
+    assert.equal(entregado.body.venta, null); // la venta ya se registró al pagar
+    assert.ok(cerca((await stockDe("Harina")).toString(), harinaPreparando));
     assert.ok(!(await api<PedidoEntrega[]>("GET", "/pedidos")).body.some((p) => p.id === pedido.id));
     assert.ok((await api<PedidoEntrega[]>("GET", "/pedidos?vista=historial")).body.some((p) => p.id === pedido.id));
-    // Terminado: no se cambia ni se borra (ya es venta).
     assert.equal((await api("POST", `/pedidos/${pedido.id}/estado`, { estado: "CANCELADO" })).status, 409);
     assert.equal((await api("PATCH", `/pedidos/${pedido.id}`, { nota: "x" })).status, 409);
-    assert.equal((await api("DELETE", `/pedidos/${pedido.id}`)).status, 409);
   });
 
-  test("cancelar guarda el motivo y no toca ventas ni stock; solo se vuelve un paso atrás", async () => {
-    const { body: pedido } = await nuevoPedido();
-    await api("POST", `/pedidos/${pedido.id}/estado`, { estado: "LISTO" });
+  test("anular el pago o cancelar antes de preparar no tocan el stock; cancelar en preparación no devuelve insumos", async () => {
+    const harinaAntes = await stockDe("Harina");
+    const { body: pedido } = await nuevoPedido({ pago: { metodo: "EFECTIVO" } });
+    assert.equal(pedido.estado, "PENDIENTE");
+    assert.ok(cerca((await stockDe("Harina")).toString(), harinaAntes));
+    const anulado = await api<PedidoEntrega & { pagado: boolean }>("DELETE", `/pedidos/${pedido.id}/pago`);
+    assert.equal(anulado.status, 200);
+    assert.equal(anulado.body.estado, "POR_PAGAR");
+    assert.equal(anulado.body.pagado, false);
+    assert.ok(cerca((await stockDe("Harina")).toString(), harinaAntes));
+    assert.equal((await api("POST", `/pedidos/${pedido.id}/estado`, { estado: "POR_PAGAR" })).status, 409); // ya está así
+
+    await api("POST", `/pedidos/${pedido.id}/pago`, { metodo: "QR", referencia: "OP-555 01" });
+    await api("POST", `/pedidos/${pedido.id}/estado`, { estado: "LISTO" }); // saltar a «Listo» también descuenta
+    const harinaUsada = await stockDe("Harina");
+    assert.ok(harinaUsada.lt(harinaAntes));
     assert.equal((await api("POST", `/pedidos/${pedido.id}/estado`, { estado: "PENDIENTE" })).status, 422);
     assert.equal((await api("POST", `/pedidos/${pedido.id}/estado`, { estado: "EN_PREPARACION" })).status, 200);
-    const harinaAntes = await stockDe("Harina");
-    const cancelado = await api<{ pedido: PedidoEntrega & { motivoCancelacion: string } }>(
+    const cancelado = await api<{ pedido: PedidoEntrega & { motivoCancelacion: string }; ventaAnulada: boolean }>(
       "POST",
       `/pedidos/${pedido.id}/estado`,
       { estado: "CANCELADO", motivo: "El cliente ya no lo necesita" },
@@ -1940,7 +2061,15 @@ describe("Pedidos por entregar (D81)", () => {
     assert.equal(cancelado.status, 200);
     assert.equal(cancelado.body.pedido.estado, "CANCELADO");
     assert.equal(cancelado.body.pedido.motivoCancelacion, "El cliente ya no lo necesita");
-    assert.ok(cerca((await stockDe("Harina")).toString(), harinaAntes));
+    assert.equal(cancelado.body.ventaAnulada, true);
+    assert.ok(cerca((await stockDe("Harina")).toString(), harinaUsada)); // ya se habían usado
+    // La referencia del pago anulado queda libre.
+    const otro = await nuevoPedido();
+    assert.equal((await api("POST", `/pedidos/${otro.body.id}/pago`, { metodo: "QR", referencia: "op55501" })).status, 200);
+    // Cancelar uno pagado que no se empezó: se anula la venta y el stock no cambia.
+    const antesOtro = await stockDe("Harina");
+    assert.equal((await api("POST", `/pedidos/${otro.body.id}/estado`, { estado: "CANCELADO" })).status, 200);
+    assert.ok(cerca((await stockDe("Harina")).toString(), antesOtro));
   });
 
   test("editar cambia día, nota y productos con su total; borrar un pendiente lo quita", async () => {
@@ -2085,5 +2214,550 @@ describe("Pedido sin confirmar del agente (D85)", () => {
     });
     assert.equal(status, 409);
     assert.match(body.error, /no confirmó/);
+  });
+
+  test("un delivery se anota como cotización aunque no haya «sí»: confirma al ver el envío (D92)", async () => {
+    const queque = await productoPorNombre("Queque");
+    const { status, body } = await api<{ estado: string }>("POST", "/pedidos?confirmado=no", {
+      clienteNombre: "Cliente Delivery",
+      celular: "75556667",
+      fechaEntrega: diaMas(1),
+      origen: "WHATSAPP",
+      entrega: "DELIVERY",
+      ubicacion: "https://maps.google.com/?q=-16.5,-68.1",
+      lineas: [{ productoId: queque.id, cantidad: 1 }],
+    });
+    assert.equal(status, 201);
+    assert.equal(body.estado, "POR_PAGAR");
+  });
+});
+
+describe("Pago por QR desde WhatsApp (D86)", () => {
+  type Respuesta = {
+    resultado: "por_confirmar" | "incompleto" | "rechazado" | "revision";
+    motivos: string[];
+    motivosCliente: string[];
+    faltante: number | null;
+    saldo: number | null;
+    pedido: (PedidoEntrega & { pagado: boolean }) | null;
+  };
+  type Aviso = { id: string; motivo: string; tieneAdjunto: boolean; pedido: { numero: number } | null; celular: string };
+  const COMPROBANTE = "data:image/png;base64,iVBORw0KGgo=";
+  const pedidoPorPagar = async (celular: string) => {
+    const queque = await productoPorNombre("Queque");
+    return (
+      await api<PedidoEntrega>("POST", "/pedidos", {
+        clienteNombre: `Cliente QR ${celular}`,
+        celular,
+        fechaEntrega: diaMas(1),
+        origen: "WHATSAPP",
+        lineas: [{ productoId: queque.id, cantidad: 2 }],
+      })
+    ).body;
+  };
+  // Regla de oro (D95): solo vale un comprobante con la fecha de hoy (hora de Bolivia).
+  const HOY = new Date().toLocaleDateString("sv-SE", { timeZone: "America/La_Paz" });
+  const leido = (extra: Record<string, unknown>) => ({
+    esComprobante: true,
+    fecha: `${HOY} 10:15`,
+    confianza: 0.95,
+    receptor: "Maria Fernanda Lopez",
+    titular: "María Fernanda López Rojas",
+    banco: "BNB",
+    comprobante: COMPROBANTE,
+    ...extra,
+  });
+
+  test("un comprobante que cuadra no confirma solo: va a Atención y la dueña confirma el pago (D91)", async () => {
+    const pedido = await pedidoPorPagar("76660001");
+    const { status, body } = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660001", monto: Number(pedido.total), referencia: "TX-9001" }),
+    );
+    assert.equal(status, 200);
+    assert.equal(body.resultado, "por_confirmar");
+    assert.equal(body.pedido?.numero, pedido.numero);
+    assert.equal(body.pedido?.estado, "POR_PAGAR");
+    assert.equal(body.pedido?.pagado, false);
+    type AvisoPago = Aviso & { montoReportado: string | null; referencia: string | null };
+    const aviso = (await api<AvisoPago[]>("GET", "/atenciones")).body.find((a) => a.celular.endsWith("76660001"));
+    assert.equal(aviso?.motivo, "VERIFICAR_PAGO");
+    assert.equal(aviso?.tieneAdjunto, true);
+    assert.equal(aviso?.referencia, "TX9001");
+    assert.ok(cerca(aviso?.montoReportado ?? "0", D(pedido.total)));
+
+    // Otro cliente manda el mismo comprobante mientras el primero espera: posible estafa.
+    const copia = await pedidoPorPagar("76660005");
+    const copiado = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660005", monto: Number(copia.total), referencia: "TX 9001" }),
+    );
+    assert.equal(copiado.body.resultado, "rechazado");
+    assert.match(copiado.body.motivos.join(" "), /otro cliente/);
+    const estafa = (await api<Aviso[]>("GET", "/atenciones")).body.find((a) => a.celular.endsWith("76660005"));
+    assert.equal(estafa?.motivo, "POSIBLE_ESTAFA");
+
+    // La dueña vio el dinero en su banco y confirma: venta, agenda y comprobante guardado.
+    const confirmado = await api<{ pedido: PedidoEntrega & { pagado: boolean } }>("POST", `/pedidos/${pedido.id}/pago`, {
+      metodo: "QR",
+      monto: aviso?.montoReportado,
+      referencia: aviso?.referencia,
+      comprobante: COMPROBANTE,
+    });
+    assert.equal(confirmado.status, 200);
+    assert.equal(confirmado.body.pedido.estado, "PENDIENTE");
+    assert.equal(confirmado.body.pedido.pagado, true);
+    const archivo = await api<{ comprobante: string }>("GET", `/pedidos/${pedido.id}/comprobante`);
+    assert.equal(archivo.body.comprobante, COMPROBANTE);
+
+    // La IA ve el comprobante retocado: posible estafa aunque el monto cuadre.
+    const editado = await pedidoPorPagar("76660006");
+    const retocado = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660006", monto: Number(editado.total), pareceEditado: true, sospecha: "el monto tiene otra letra" }),
+    );
+    assert.equal(retocado.body.resultado, "rechazado");
+    assert.match(retocado.body.motivos.join(" "), /parece editada: el monto/);
+
+    // Un comprobante viejo sin cotización abierta: la fecha no es de hoy (D93).
+    const viejo = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660007", monto: 80, fecha: "2026-01-12 08:42", referencia: "VIEJO-1" }),
+    );
+    assert.equal(viejo.body.resultado, "rechazado");
+    assert.match(viejo.body.motivos.join(" "), /Este pago es de hace \d+ meses \(12\/01\/2026\), no de hoy/);
+    assert.match(viejo.body.motivosCliente.join(" "), /no coincide con la fecha de hoy/);
+    assert.match(viejo.body.motivos.join(" "), /no tiene una cotización por pagar/);
+
+    // El mismo nro. de operación no paga otro pedido: va a revisión.
+    const segundo = await pedidoPorPagar("76660002");
+    const repetido = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660002", monto: Number(segundo.total), referencia: "tx 9001" }),
+    );
+    assert.equal(repetido.body.resultado, "rechazado");
+    assert.match(repetido.body.motivos.join(" "), /ya se usó/);
+  });
+
+  test("monto menor, otro destinatario o sin pedido van a Atención con el comprobante y pausan el chat", async () => {
+    const pedido = await pedidoPorPagar("76660003");
+    const menor = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660003", monto: Number(pedido.total) - 5, referencia: "TX-9003" }),
+    );
+    // Monto incompleto (D94): el agente le pide el saldo al cliente; la tarjeta lo resalta primero, sin nro. de pedido.
+    assert.equal(menor.body.resultado, "incompleto");
+    assert.equal(menor.body.faltante, 5);
+    assert.match(menor.body.motivos.join(" "), /Faltan Bs 5,00/);
+    assert.equal((await api<{ pausado: boolean }>("GET", "/atenciones/pausa?celular=59176660003")).body.pausado, true);
+    const avisos = (await api<Aviso[]>("GET", "/atenciones")).body;
+    const aviso = avisos.find((a) => a.celular.endsWith("76660003"));
+    assert.equal(aviso?.motivo, "VERIFICAR_PAGO"); // pago parcial válido (D95)
+    assert.equal(aviso?.tieneAdjunto, true);
+    assert.equal(aviso?.pedido?.numero, pedido.numero);
+    assert.equal((await api<{ adjunto: string }>("GET", `/atenciones/${aviso?.id}/adjunto`)).body.adjunto, COMPROBANTE);
+    assert.equal((await api<PedidoEntrega>("GET", `/pedidos/${pedido.id}`)).body.estado, "POR_PAGAR");
+    const descripcion = (aviso as Aviso & { descripcion: string }).descripcion;
+    assert.match(descripcion, /^Pago parcial de Bs [\d,]+\.\n!- Faltan Bs 5,00/);
+    assert.doesNotMatch(descripcion, /N\.º/);
+
+    // Reenviar el mismo comprobante no lo suma dos veces; el saldo en otro comprobante completa el pago.
+    await api(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660003", monto: Number(pedido.total) - 5, referencia: "TX-9003" }),
+    );
+    const saldo = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660003", monto: 5, referencia: "TX-9004" }),
+    );
+    assert.equal(saldo.body.resultado, "por_confirmar");
+    const tarjetas = (await api<(Aviso & { descripcion: string })[]>("GET", "/atenciones")).body.filter((a) =>
+      a.celular.endsWith("76660003"),
+    );
+    assert.equal(tarjetas.length, 2);
+    assert.ok(tarjetas.some((a) => /Completa el pago: antes mandó/.test(a.descripcion)));
+
+    const otroDestino = await pedidoPorPagar("76660004");
+    const destino = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660004", monto: Number(otroDestino.total), receptor: "Juan Perez Quispe" }),
+    );
+    assert.equal(destino.body.resultado, "rechazado");
+    assert.match(destino.body.motivos.join(" "), /no a/);
+
+    const sinPedido = await api<Respuesta>("POST", "/pedidos/pago-whatsapp", leido({ celular: "59176669999", monto: 20 }));
+    assert.equal(sinPedido.body.resultado, "revision");
+    assert.equal(sinPedido.body.pedido, null);
+    const foto = await api<Respuesta>("POST", "/pedidos/pago-whatsapp", {
+      celular: "59176669998",
+      esComprobante: false,
+      comprobante: COMPROBANTE,
+    });
+    assert.equal(foto.body.resultado, "revision");
+  });
+
+  test("cero confianza: un comprobante rechazado no descuenta nada del saldo (D95)", async () => {
+    const pedido = await pedidoPorPagar("76660008");
+    const total = Number(pedido.total);
+    const falso = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660008", monto: 1, fecha: "2026-10-12 08:43", referencia: "FALSO-1" }),
+    );
+    assert.equal(falso.body.resultado, "rechazado");
+    assert.equal(falso.body.saldo, total); // el Bs 1 no se descuenta
+    const tarjeta = (
+      await api<(Aviso & { descripcion: string; montoReportado: string | null })[]>("GET", "/atenciones")
+    ).body.find((a) => a.celular.endsWith("76660008"));
+    assert.equal(tarjeta?.motivo, "POSIBLE_ESTAFA");
+    assert.equal(tarjeta?.montoReportado, null);
+    assert.match(tarjeta?.descripcion ?? "", /^Comprobante rechazado: sus Bs 1,00 no se descuentan\.\n!- Este pago es de/);
+
+    // El pago de hoy dice «Pendiente»: también se rechaza.
+    const pendiente = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660008", monto: total, estadoPago: "Pendiente", referencia: "PEND-1" }),
+    );
+    assert.equal(pendiente.body.resultado, "rechazado");
+    assert.match(pendiente.body.motivosCliente.join(" "), /pendiente/i);
+
+    // El pago bueno de hoy por el total cuadra: los rechazados no cuentan.
+    const bueno = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660008", monto: total, referencia: "OK-1" }),
+    );
+    assert.equal(bueno.body.resultado, "por_confirmar");
+
+    // El pago bueno reemplaza la tarjeta de «posible estafa»: queda una sola, de pago por confirmar (D96).
+    const tarjetas = (await api<(Aviso & { descripcion: string })[]>("GET", "/atenciones")).body.filter((a) =>
+      a.celular.endsWith("76660008"),
+    );
+    assert.equal(tarjetas.length, 1);
+    assert.equal(tarjetas[0]?.motivo, "VERIFICAR_PAGO");
+    assert.match(tarjetas[0]?.descripcion ?? "", /- Antes mandó un comprobante rechazado/);
+  });
+
+  test("solo se aceptan fotos y PDF: un SVG (puede llevar código) se rechaza; los cuerpos grandes solo en comprobantes (S1, S4)", async () => {
+    await pedidoPorPagar("76660010");
+    const svg = await api<{ error: string; detalles: { mensaje: string }[] }>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660010", monto: 1, comprobante: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" }),
+    );
+    assert.equal(svg.status, 400);
+    assert.match(svg.body.detalles.map((d) => d.mensaje).join(" "), /foto .* o un PDF/);
+    for (const tipo of ["image/jpeg", "image/webp", "application/pdf"]) {
+      const ok = await api(
+        "POST",
+        "/pedidos/pago-whatsapp",
+        leido({ celular: "59176660010", monto: 1, comprobante: `data:${tipo};base64,AAAA` }),
+      );
+      assert.equal(ok.status, 200, tipo);
+    }
+    // Un comprobante de ~2 MB entra; el mismo tamaño en otra ruta se corta con 413.
+    const grande = `data:image/png;base64,${"A".repeat(2_000_000)}`;
+    const conArchivo = await api(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ celular: "59176660010", monto: 1, comprobante: grande }),
+    );
+    assert.equal(conArchivo.status, 200);
+    const otraRuta = await api<{ error: string }>("POST", "/gastos", { descripcion: "A".repeat(200_000), monto: 1 });
+    assert.equal(otraRuta.status, 413);
+    assert.match(otraRuta.body.error, /demasiado grande/);
+  });
+
+  test("el destino vale por nombre o por cuenta del QR (D96)", async () => {
+    const pedido = await pedidoPorPagar("76660009");
+    const total = Number(pedido.total);
+    const sinNombre = { receptor: null, cuentaTitular: "61317418" };
+    // Comprobante que solo muestra la cuenta de destino (BCP → Yape): la cuenta del QR alcanza.
+    const porCuenta = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ ...sinNombre, celular: "59176660009", monto: total, cuentaDestino: "61317418", referencia: "CTA-OK" }),
+    );
+    assert.equal(porCuenta.body.resultado, "por_confirmar");
+    // A otra cuenta: rechazado.
+    const otraCuenta = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ ...sinNombre, celular: "59176660009", monto: total, cuentaDestino: "70000001", referencia: "CTA-MAL" }),
+    );
+    assert.equal(otraCuenta.body.resultado, "rechazado");
+    // Sin nombre ni cuenta de destino: lo revisa la dueña.
+    const sinDestino = await api<Respuesta>(
+      "POST",
+      "/pedidos/pago-whatsapp",
+      leido({ ...sinNombre, celular: "59176660009", monto: total, referencia: "CTA-NADA" }),
+    );
+    assert.equal(sinDestino.body.resultado, "revision");
+  });
+});
+
+describe("Cotización con delivery (D89)", () => {
+  type Aviso = { id: string; motivo: string; celular: string; pedido: { numero: number } | null };
+  const cotizacionDelivery = async (celular: string) => {
+    const queque = await productoPorNombre("Queque");
+    const pedido = (
+      await api<PedidoEntrega & { entrega: string }>("POST", "/pedidos", {
+        clienteNombre: `Cliente Envío ${celular}`,
+        celular,
+        fechaEntrega: diaMas(1),
+        origen: "WHATSAPP",
+        entrega: "DELIVERY",
+        ubicacion: "https://maps.google.com/?q=-16.5,-68.1",
+        lineas: [{ productoId: queque.id, cantidad: 2 }],
+      })
+    ).body;
+    const aviso = (
+      await api<Aviso>("POST", "/atenciones", {
+        celular: `591${celular}`,
+        motivo: "COTIZAR_DELIVERY",
+        descripcion: "Cotizar delivery (Yango)",
+        pedidoNumero: pedido.numero,
+      })
+    ).body;
+    return { pedido, aviso };
+  };
+
+  test("la dueña cotiza el envío, el cliente lo acepta y recién entonces puede pagar sin revisión", async () => {
+    const { pedido, aviso } = await cotizacionDelivery("77880001");
+    // Antes de que la dueña cotice, el cliente no puede aceptar.
+    assert.equal((await api("POST", "/pedidos/cotizacion/aceptar-envio", { celular: "59177880001" })).status, 409);
+    const cotizado = await api<{ costoEnvio: number; enviado: boolean }>("POST", `/atenciones/${aviso.id}/costo-envio`, {
+      costoEnvio: 12,
+    });
+    assert.equal(cotizado.status, 200);
+    assert.equal(cotizado.body.enviado, false); // en pruebas no se llama a n8n
+    assert.equal((await api<{ pausado: boolean }>("GET", "/atenciones/pausa?celular=59177880001")).body.pausado, false);
+    const guardado = await api<PedidoEntrega & { costoEnvio: string; total: string }>("GET", `/pedidos/${pedido.id}`);
+    assert.ok(cerca(guardado.body.costoEnvio, D(12)));
+    assert.ok(cerca(guardado.body.total, D(pedido.total))); // el envío no entra en el total ni en el QR
+
+    // Pagar antes de aceptar el envío va a revisión.
+    const apurado = await api<{ resultado: string; motivos: string[] }>("POST", "/pedidos/pago-whatsapp", {
+      celular: "59177880001",
+      esComprobante: true,
+      fecha: new Date().toLocaleDateString("sv-SE", { timeZone: "America/La_Paz" }),
+      monto: Number(pedido.total),
+      confianza: 0.9,
+    });
+    assert.equal(apurado.body.resultado, "revision");
+    assert.match(apurado.body.motivos.join(" "), /aceptar el costo del envío/);
+    await api(
+      "POST",
+      `/atenciones/${(await api<Aviso[]>("GET", "/atenciones")).body.find((a) => a.celular.endsWith("77880001"))?.id}/resolver`,
+    );
+
+    const aceptado = await api<{ total: string; costoEnvio: string }>("POST", "/pedidos/cotizacion/aceptar-envio", {
+      celular: "59177880001",
+    });
+    assert.equal(aceptado.status, 200);
+    assert.ok(cerca(aceptado.body.total, D(pedido.total)));
+    const pagado = await api<{ resultado: string }>("POST", "/pedidos/pago-whatsapp", {
+      celular: "59177880001",
+      esComprobante: true,
+      fecha: new Date().toLocaleDateString("sv-SE", { timeZone: "America/La_Paz" }),
+      monto: Number(pedido.total),
+      referencia: "ENV-1",
+      confianza: 0.9,
+    });
+    assert.equal(pagado.body.resultado, "por_confirmar");
+  });
+
+  test("si el envío le parece caro, el cliente se retira y la cotización se cancela sin venta", async () => {
+    const { pedido, aviso } = await cotizacionDelivery("77880002");
+    await api("POST", `/atenciones/${aviso.id}/costo-envio`, { costoEnvio: 45 });
+    const ventasAntes = (await api<ListaVentas>("GET", "/ventas")).body.ventas.length;
+    const cancelado = await api<{ cancelado: boolean; numero: number }>("POST", "/pedidos/cotizacion/cancelar", {
+      celular: "59177880002",
+      motivo: "El envío le pareció caro",
+    });
+    assert.equal(cancelado.status, 200);
+    assert.equal(cancelado.body.numero, pedido.numero);
+    const final = await api<PedidoEntrega & { motivoCancelacion: string }>("GET", `/pedidos/${pedido.id}`);
+    assert.equal(final.body.estado, "CANCELADO");
+    assert.equal(final.body.motivoCancelacion, "El envío le pareció caro");
+    assert.equal((await api<ListaVentas>("GET", "/ventas")).body.ventas.length, ventasAntes);
+    assert.equal((await api("POST", "/pedidos/cotizacion/cancelar", { celular: "59177880002" })).status, 404);
+    // No se cotiza el envío de un pedido que no está en cotización.
+    assert.equal((await api("POST", `/atenciones/${aviso.id}/costo-envio`, { costoEnvio: 10 })).status, 409);
+  });
+});
+
+describe("Sprint 3 de la auditoría: reglas del comprobante, listas livianas y costeo con caché (D102)", () => {
+  const HOY = "2026-11-13";
+  const base = {
+    esComprobante: true,
+    monto: D("80"),
+    confianza: 0.95,
+    fecha: `${HOY} 10:15`,
+    referencia: "OP-1",
+    receptor: null,
+    titular: "Carolina Aranibar Huayta",
+    cuentaDestino: "61317418",
+    cuentaTitular: "61317418",
+    estadoPago: null,
+    pareceEditado: false,
+    sospecha: null,
+    banco: "Yape",
+    enviadoPor: "Cliente",
+  };
+  const contexto = {
+    hoy: HOY,
+    total: D("80"),
+    yaPago: D("0"),
+    parcialesPrevios: 0,
+    envioSinAceptar: false,
+    referenciaRepetida: null,
+  };
+
+  test("evaluarComprobante: regla de oro, destino, estado y pagos fraccionados, sin base de datos (M1)", async () => {
+    const { evaluarComprobante } = await import("../src/services/comprobantes");
+    assert.equal(evaluarComprobante(base, contexto).resultado, "por_confirmar");
+    const ayer = evaluarComprobante({ ...base, fecha: "2026-11-12 09:00" }, contexto);
+    assert.equal(ayer.resultado, "rechazado");
+    assert.match(ayer.rechazos[0]?.duena ?? "", /Este pago es de ayer \(12\/11\/2026\), no de hoy/);
+    assert.match(
+      evaluarComprobante({ ...base, fecha: "2026-11-14 09:00" }, contexto).rechazos[0]?.duena ?? "",
+      /todavía no llegó/,
+    );
+    assert.equal(evaluarComprobante({ ...base, fecha: null }, contexto).resultado, "rechazado");
+    assert.equal(evaluarComprobante({ ...base, cuentaDestino: "70000001" }, contexto).resultado, "rechazado");
+    assert.equal(evaluarComprobante({ ...base, cuentaDestino: null }, contexto).resultado, "revision");
+    assert.equal(evaluarComprobante({ ...base, estadoPago: "En proceso" }, contexto).resultado, "rechazado");
+    const tercero = evaluarComprobante({ ...base, monto: D("10") }, { ...contexto, yaPago: D("20"), parcialesPrevios: 2 });
+    assert.equal(tercero.resultado, "rechazado");
+    assert.match(tercero.rechazos.map((r) => r.duena).join(" "), /Pagos fraccionados/);
+    const sinCotizacion = evaluarComprobante(base, { ...contexto, total: null });
+    assert.equal(sinCotizacion.resultado, "revision");
+  });
+
+  test("evaluarComprobante: los montos son exactos con Decimal, sin centavos fantasma (S3)", async () => {
+    const { evaluarComprobante } = await import("../src/services/comprobantes");
+    // Ya pagó 0,10 + 0,20 de una cotización de 0,60: con number quedaban 0,30000000000000004.
+    const ctx = { ...contexto, total: D("0.6"), yaPago: D("0.1").add(D("0.2")), parcialesPrevios: 1 };
+    const justo = evaluarComprobante({ ...base, monto: D("0.3") }, ctx);
+    assert.equal(justo.resultado, "por_confirmar");
+    assert.equal(justo.faltante, null);
+    const parcial = evaluarComprobante({ ...base, monto: D("0.29") }, ctx);
+    assert.equal(parcial.resultado, "incompleto");
+    assert.equal(parcial.faltante?.toString(), "0.01");
+    const deMas = evaluarComprobante({ ...base, monto: D("0.31") }, ctx);
+    assert.equal(deMas.resultado, "revision");
+  });
+
+  test("las listas de Pedidos y Atención no traen el archivo, pero sí si lo tiene (R1)", async () => {
+    const pedidos = (await api<Record<string, unknown>[]>("GET", "/pedidos?vista=proximos")).body;
+    assert.ok(pedidos.length > 0);
+    assert.ok(pedidos.every((p) => !("comprobante" in p) && typeof p.tieneComprobante === "boolean"));
+    const historial = (await api<Record<string, unknown>[]>("GET", "/pedidos?vista=historial")).body;
+    assert.ok(historial.every((p) => !("comprobante" in p)));
+    const atenciones = (await api<Record<string, unknown>[]>("GET", "/atenciones?estado=TODAS")).body;
+    assert.ok(atenciones.length > 0);
+    assert.ok(atenciones.every((a) => !("adjunto" in a) && typeof a.tieneAdjunto === "boolean"));
+    assert.ok(atenciones.some((a) => a.tieneAdjunto === true)); // los comprobantes de las pruebas D86 siguen marcados
+  });
+
+  test("el costo de la lista (con caché por petición) es igual al del cálculo de cada producto (R2)", async () => {
+    const lista = (await api<Producto[]>("GET", "/productos")).body;
+    assert.ok(lista.length > 5);
+    for (const p of lista) {
+      const solo = (await api<Costo>("GET", `/productos/${p.id}/costo`)).body;
+      assert.equal(p.costoUnitario, solo.costoUnitario, p.nombre);
+    }
+  });
+});
+
+describe("Sprint 4 de la auditoría: costeo = inventario, respaldos, nombres y configuración (D103)", () => {
+  test("para cada producto, el costo es exactamente lo que el inventario descuenta × el precio de cada insumo (M4)", async () => {
+    const { prisma } = await import("../src/prisma");
+    const { calcularCostoProducto, costoUnitarioInsumo } = await import("../src/services/costeo");
+    const { explotarInsumos } = await import("../src/services/inventario");
+    const productos = await prisma.producto.findMany({
+      where: { tipo: "VENTA", eliminado: false },
+      select: { id: true, nombre: true },
+    });
+    assert.ok(productos.length > 5);
+    const insumos = new Map((await prisma.insumo.findMany()).map((i) => [i.id, i]));
+    for (const p of productos) {
+      const { costoUnitario } = await calcularCostoProducto(prisma, p.id);
+      const consumo = await explotarInsumos(prisma, p.id, D(1));
+      let segunInventario = D(0);
+      for (const [insumoId, cantidad] of consumo) {
+        const insumo = insumos.get(insumoId);
+        assert.ok(insumo, `insumo ${insumoId}`);
+        segunInventario = segunInventario.add(cantidad.mul(costoUnitarioInsumo(insumo)));
+      }
+      // Mismo cálculo por dos caminos: solo puede diferir en el último decimal interno de Decimal.
+      assert.ok(
+        costoUnitario.sub(segunInventario).abs().lt(D("0.000000001")),
+        `${p.nombre}: ${costoUnitario} ≠ ${segunInventario}`,
+      );
+    }
+  });
+
+  test("retención de respaldos: los N recientes, uno por día de 30 días y uno por mes de 12 meses (D1)", async () => {
+    const { elegirAConservar } = await import("../src/services/backup");
+    const nombre = (dia: string, hora: string) => ({ archivo: `dulzura_${dia}_${hora}.db.gz` });
+    // Del más nuevo al más viejo: 3 hoy, 2 hace 10 días, 1 hace 40 días, 1 hace 5 meses y 1 hace 2 años.
+    const lista = [
+      nombre("2026-11-13", "18-00-00"),
+      nombre("2026-11-13", "12-00-00"),
+      nombre("2026-11-13", "09-00-00"),
+      nombre("2026-11-03", "20-00-00"),
+      nombre("2026-11-03", "08-00-00"),
+      nombre("2026-10-04", "10-00-00"),
+      nombre("2026-06-15", "10-00-00"),
+      nombre("2024-11-01", "10-00-00"),
+    ];
+    const conservar = elegirAConservar(lista, 2, new Date(2026, 10, 13, 19));
+    assert.deepEqual(
+      lista.filter((r) => conservar.has(r.archivo)).map((r) => r.archivo.slice(8, 27)),
+      [
+        "2026-11-13_18-00-00", // reciente y el último de hoy
+        "2026-11-13_12-00-00", // reciente
+        "2026-11-03_20-00-00", // último de ese día (dentro de 30 días)
+        "2026-10-04_10-00-00", // último de octubre
+        "2026-06-15_10-00-00", // último de junio
+      ],
+    );
+  });
+
+  test("dos nombres que solo cambian en puntos o guiones son el mismo cliente (S5)", async () => {
+    const { normalizarNombre } = await import("../src/validacion");
+    assert.equal(normalizarNombre("María-José  Pérez"), normalizarNombre("maria jose perez"));
+    assert.equal(normalizarNombre("Dra. Ana"), normalizarNombre("Dra Ana"));
+    assert.notEqual(normalizarNombre("Ana Pérez"), normalizarNombre("Ana Peralta"));
+    await api("POST", "/clientes", { nombre: "Luz-Marina Test S5", celular: "70005500" });
+    assert.equal((await api("POST", "/clientes", { nombre: "Luz Marina Test S5", celular: "70005501" })).status, 409);
+  });
+
+  test("gastos fijos del mes: Bs 300 al empezar y la dueña los cambia (D3)", async () => {
+    assert.ok(cerca((await api<{ gastosFijos: string }>("GET", "/configuracion/gastos-fijos")).body.gastosFijos, "300"));
+    const guardado = await api<{ gastosFijos: string }>("PUT", "/configuracion/gastos-fijos", { gastosFijos: "1250.5" });
+    assert.equal(guardado.status, 200);
+    assert.ok(cerca((await api<{ gastosFijos: string }>("GET", "/configuracion/gastos-fijos")).body.gastosFijos, "1250.5"));
+    assert.equal((await api("PUT", "/configuracion/gastos-fijos", { gastosFijos: "-5" })).status, 400);
+  });
+
+  test("los errores de validación dicen el tipo en palabras (U4)", async () => {
+    const r = await api<{ detalles: { campo: string; mensaje: string }[] }>("PUT", "/configuracion/gastos-fijos", {
+      gastosFijos: true,
+    });
+    assert.equal(r.status, 400);
+    assert.ok(r.body.detalles.every((d) => !/se esperaba/.test(d.mensaje)));
   });
 });

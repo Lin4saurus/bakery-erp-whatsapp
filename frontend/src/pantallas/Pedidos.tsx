@@ -2,16 +2,19 @@ import { Fragment, useState } from "react";
 import {
   MdAdd,
   MdDeleteOutline,
+  MdOutlineCheckCircle,
   MdOutlineDeliveryDining,
   MdOutlineEdit,
+  MdOutlineReceiptLong,
   MdOutlineStorefront,
   MdOutlineUndo,
   MdWhatsapp,
 } from "react-icons/md";
-import { api, mensajeDeError, type Cliente, type Pedido, type Producto, type TipoCliente, type TipoEntrega } from "../api";
+import { api, mensajeDeError, type Cliente, type MetodoPago, type Pedido, type Producto, type TipoEntrega } from "../api";
 import { bs, cantidad, esNumeroValido, hoyISO, normalizarNumero } from "../formato";
 import { precioParaCliente } from "../precios";
 import {
+  abrirArchivo,
   anterior,
   claseEstado,
   enlaceMapa,
@@ -19,34 +22,53 @@ import {
   fechaLarga,
   nombreDia,
   nombreEstado,
+  nombreMetodo,
   paraPreparar,
   siguiente,
 } from "../pedidos";
-import { Aviso, BuscadorCliente, Button, Campo, Cargando, Panel, TipoClienteBadge, Ventana, mismoNombre, useDatos } from "../ui";
+import { Aviso, Button, Campo, Cargando, Opciones, Panel, TipoClienteBadge, Ventana, useDatos } from "../ui";
+import { useAlAvisar } from "../avisos";
 import "./Pedidos.css";
 
 type Vista = "proximos" | "historial";
 type Mensaje = { tipo: "ok" | "error" | "alerta"; texto: string };
 
-// Pedidos por entregar (D81): la agenda de la repostera. Un pedido no es venta hasta que se entrega.
+// Pedidos por entregar (D81): la agenda de la repostera. El cliente paga primero (D86): al registrar el pago
+// se registra la venta y el pedido queda agendado; los que esperan pago van aparte, arriba.
 export function Pedidos() {
   const [vista, setVista] = useState<Vista>("proximos");
   const proximos = useDatos(() => api.pedidos("proximos"));
   const historial = useDatos(() => api.pedidos("historial"));
   const productos = useDatos(() => api.productos({ tipo: "VENTA", activo: true }));
   const clientes = useDatos(() => api.clientes());
-  const [formulario, setFormulario] = useState<{ pedido: Pedido | null } | null>(null);
+  const [editando, setEditando] = useState<Pedido | null>(null);
   const [mensaje, setMensaje] = useState<Mensaje | null>(null);
 
+  // Después de un cambio propio (entregar, cancelar…) un pedido puede pasar de una pestaña a la otra: se recargan las dos.
+  // Los clientes no cambian desde aquí (los pedidos se anotan en Caja, D98).
   const recargar = async () => {
-    await Promise.all([proximos.recargar(), historial.recargar(), clientes.recargar()]);
+    await Promise.all([proximos.recargar(), historial.recargar()]);
   };
+  // Un pedido de WhatsApp o un pago confirmado aparecen solos (D88): solo se recarga la pestaña que se ve (R5);
+  // la otra se pone al día al abrirla.
+  useAlAvisar(() => void (vista === "proximos" ? proximos.recargar() : historial.recargar()), "pedidos");
 
   const hoy = hoyISO();
   const lista = proximos.datos ?? [];
-  // Atrasados juntos arriba; después un grupo por día de entrega.
+  // Esperando pago arriba; después los atrasados y un grupo por día de entrega (solo los agendados).
   const grupos: { clave: string; titulo: string; detalle: string; atrasado: boolean; pedidos: Pedido[] }[] = [];
-  const atrasados = lista.filter((p) => esAtrasado(p, hoy));
+  const porPagar = lista.filter((p) => p.estado === "POR_PAGAR");
+  if (porPagar.length > 0) {
+    grupos.push({
+      clave: "por-pagar",
+      titulo: "Cotizaciones",
+      detalle: "Todavía no pagan: se agendan cuando paguen (QR o efectivo)",
+      atrasado: false,
+      pedidos: porPagar,
+    });
+  }
+  const agendados = lista.filter((p) => p.estado !== "POR_PAGAR");
+  const atrasados = agendados.filter((p) => esAtrasado(p, hoy));
   if (atrasados.length > 0) {
     grupos.push({
       clave: "atrasados",
@@ -56,13 +78,13 @@ export function Pedidos() {
       pedidos: atrasados,
     });
   }
-  for (const dia of [...new Set(lista.filter((p) => !esAtrasado(p, hoy)).map((p) => p.fechaEntrega))]) {
+  for (const dia of [...new Set(agendados.filter((p) => !esAtrasado(p, hoy)).map((p) => p.fechaEntrega))]) {
     grupos.push({
       clave: dia,
       titulo: nombreDia(dia, hoy),
       detalle: fechaLarga(dia),
       atrasado: false,
-      pedidos: lista.filter((p) => p.fechaEntrega === dia),
+      pedidos: agendados.filter((p) => p.fechaEntrega === dia),
     });
   }
 
@@ -71,11 +93,11 @@ export function Pedidos() {
       <div className="cabecera-pantalla">
         <div>
           <h1>Pedidos</h1>
-          <p>Lo que tienes que preparar y entregar, día por día. Un pedido pasa a ser venta cuando lo entregas.</p>
+          <p>
+            Lo que tienes que preparar y entregar, día por día. El cliente paga primero: con el pago se registra la venta y el
+            pedido se agenda. Los pedidos nuevos se anotan en Caja.
+          </p>
         </div>
-        <Button variante="exito" onClick={() => setFormulario({ pedido: null })}>
-          <MdAdd aria-hidden /> Nuevo pedido
-        </Button>
       </div>
 
       {mensaje && <Aviso tipo={mensaje.tipo}>{mensaje.texto}</Aviso>}
@@ -87,7 +109,10 @@ export function Pedidos() {
           role="tab"
           aria-selected={vista === "proximos"}
           className={`pedidos__pestana ${vista === "proximos" ? "pedidos__pestana--activa" : ""}`}
-          onClick={() => setVista("proximos")}
+          onClick={() => {
+            setVista("proximos");
+            void proximos.recargar();
+          }}
         >
           Por entregar <span className="pedidos__cuenta">{lista.length}</span>
         </button>
@@ -96,7 +121,10 @@ export function Pedidos() {
           role="tab"
           aria-selected={vista === "historial"}
           className={`pedidos__pestana ${vista === "historial" ? "pedidos__pestana--activa" : ""}`}
-          onClick={() => setVista("historial")}
+          onClick={() => {
+            setVista("historial");
+            void historial.recargar();
+          }}
         >
           Entregados y cancelados
         </button>
@@ -107,7 +135,9 @@ export function Pedidos() {
           <Cargando />
         ) : grupos.length === 0 ? (
           <Panel titulo="Sin pedidos por entregar">
-            <p className="vacio">No hay pedidos pendientes. Anota uno con «Nuevo pedido» o espera los de WhatsApp.</p>
+            <p className="vacio">
+              No hay pedidos pendientes. Anota uno en Caja («Para entregar después») o espera los de WhatsApp.
+            </p>
           </Panel>
         ) : (
           grupos.map((g) => (
@@ -116,8 +146,9 @@ export function Pedidos() {
               titulo={g.titulo}
               detalle={g.detalle}
               atrasado={g.atrasado}
+              porPagar={g.clave === "por-pagar"}
               pedidos={g.pedidos}
-              editar={(p) => setFormulario({ pedido: p })}
+              editar={(p) => setEditando(p)}
               alCambiar={async (m) => {
                 setMensaje(m);
                 await recargar();
@@ -128,14 +159,14 @@ export function Pedidos() {
 
       {vista === "historial" && <HistorialPedidos pedidos={historial.datos} cargando={historial.cargando} />}
 
-      {formulario && (
-        <FormularioPedido
-          pedido={formulario.pedido}
+      {editando && (
+        <EditarPedido
+          pedido={editando}
           productos={productos.datos ?? []}
           clientes={clientes.datos ?? []}
-          cerrar={() => setFormulario(null)}
+          cerrar={() => setEditando(null)}
           guardado={async (texto) => {
-            setFormulario(null);
+            setEditando(null);
             setMensaje({ tipo: "ok", texto });
             await recargar();
           }}
@@ -151,6 +182,7 @@ function DiaDePedidos({
   titulo,
   detalle,
   atrasado,
+  porPagar,
   pedidos,
   editar,
   alCambiar,
@@ -158,6 +190,7 @@ function DiaDePedidos({
   titulo: string;
   detalle: string;
   atrasado: boolean;
+  porPagar: boolean;
   pedidos: Pedido[];
   editar: (p: Pedido) => void;
   alCambiar: (m: Mensaje) => Promise<void>;
@@ -165,7 +198,7 @@ function DiaDePedidos({
   const preparar = paraPreparar(pedidos);
   const total = pedidos.reduce((t, p) => t + Number(p.total), 0);
   return (
-    <section className={`pedidos__dia ${atrasado ? "pedidos__dia--atrasado" : ""}`}>
+    <section className={`pedidos__dia ${atrasado ? "pedidos__dia--atrasado" : ""} ${porPagar ? "pedidos__dia--por-pagar" : ""}`}>
       <header className="pedidos__dia-cabecera">
         <div>
           <h2>{titulo}</h2>
@@ -190,7 +223,13 @@ function DiaDePedidos({
       )}
       <div className="pedidos__tarjetas">
         {pedidos.map((p) => (
-          <TarjetaPedido key={p.id} pedido={p} atrasado={atrasado} editar={() => editar(p)} alCambiar={alCambiar} />
+          <TarjetaPedido
+            key={p.id}
+            pedido={p}
+            atrasado={atrasado || (porPagar && esAtrasado(p))}
+            editar={() => editar(p)}
+            alCambiar={alCambiar}
+          />
         ))}
       </div>
     </section>
@@ -208,8 +247,10 @@ function TarjetaPedido({
   editar: () => void;
   alCambiar: (m: Mensaje) => Promise<void>;
 }) {
-  const [confirmar, setConfirmar] = useState<"entregar" | "cancelar" | "borrar" | null>(null);
+  const [confirmar, setConfirmar] = useState<"pagar" | "anular" | "entregar" | "cancelar" | "borrar" | null>(null);
   const [motivo, setMotivo] = useState("");
+  const [metodo, setMetodo] = useState<MetodoPago>("QR");
+  const [referencia, setReferencia] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const paso = siguiente[pedido.estado];
@@ -219,7 +260,9 @@ function TarjetaPedido({
     setOcupado(true);
     setError(null);
     try {
-      const { venta } = await api.cambiarEstadoPedido(pedido.id, estado, motivoCancelacion);
+      const { venta, ventaAnulada, alertas = [] } = await api.cambiarEstadoPedido(pedido.id, estado, motivoCancelacion);
+      const avisoStock = alertas.length > 0 ? ` Revisa el stock: ${alertas.map((a) => a.nombre).join(", ")}.` : "";
+      const enCocina = pedido.estado === "EN_PREPARACION" || pedido.estado === "LISTO";
       setConfirmar(null);
       if (estado === "ENTREGADO" && venta) {
         await alCambiar({
@@ -230,7 +273,23 @@ function TarjetaPedido({
             (venta.alertas.length > 0 ? ` Revisa el stock: ${venta.alertas.map((a) => a.nombre).join(", ")}.` : ""),
         });
       } else if (estado === "CANCELADO") {
-        await alCambiar({ tipo: "ok", texto: `Pedido ${pedido.numero} de ${pedido.cliente.nombre} cancelado.` });
+        await alCambiar({
+          tipo: "ok",
+          texto:
+            `Pedido ${pedido.numero} de ${pedido.cliente.nombre} cancelado.` +
+            (ventaAnulada
+              ? ` Se anuló su venta de ${bs(pedido.total)}: devuélvele el dinero al cliente.` +
+                (enCocina ? " Los insumos ya se habían usado y no vuelven al stock." : "")
+              : ""),
+        });
+      } else if (estado === "PENDIENTE" && pedido.estado === "EN_PREPARACION") {
+        await alCambiar({ tipo: "ok", texto: `Pedido ${pedido.numero} vuelve a «Agendado»: sus insumos volvieron al stock.` });
+      } else if (pedido.estado === "PENDIENTE" && pedido.pagado) {
+        // Empezar a preparar (D87): recién aquí bajan los insumos de la receta.
+        await alCambiar({
+          tipo: alertas.length > 0 ? "alerta" : "ok",
+          texto: `Pedido ${pedido.numero}: ${nombreEstado[estado].toLowerCase()}. Se descontaron del stock los insumos de la receta.${avisoStock}`,
+        });
       } else {
         await alCambiar({ tipo: "ok", texto: `Pedido ${pedido.numero}: ${nombreEstado[estado].toLowerCase()}.` });
       }
@@ -239,6 +298,49 @@ function TarjetaPedido({
     } finally {
       setOcupado(false);
     }
+  };
+
+  // Registrar el pago (D86): se registra la venta y el pedido queda agendado; los insumos bajan al preparar (D87).
+  const pagar = async () => {
+    setOcupado(true);
+    setError(null);
+    try {
+      const { venta } = await api.pagarPedido(pedido.id, { metodo, referencia: referencia.trim() || null });
+      setConfirmar(null);
+      await alCambiar({
+        tipo: venta.alertas.length > 0 ? "alerta" : "ok",
+        texto:
+          `Pago del pedido ${pedido.numero} registrado (${nombreMetodo[metodo]}): venta de ${bs(venta.totalVenta)} a ` +
+          `${venta.cliente}; queda agendado para ${nombreDia(pedido.fechaEntrega).toLowerCase()}.` +
+          (venta.alertas.length > 0 ? ` Revisa el stock: ${venta.alertas.map((a) => a.nombre).join(", ")}.` : ""),
+      });
+    } catch (e) {
+      setError(mensajeDeError(e));
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const anularPago = async () => {
+    setOcupado(true);
+    setError(null);
+    try {
+      await api.anularPago(pedido.id);
+      setConfirmar(null);
+      await alCambiar({
+        tipo: "ok",
+        texto: `Se anuló el pago del pedido ${pedido.numero}: se borró su venta y quedó por pagar.`,
+      });
+    } catch (e) {
+      setError(mensajeDeError(e));
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const verComprobante = () => {
+    setError(null);
+    abrirArchivo(async () => (await api.comprobantePedido(pedido.id)).comprobante).catch((e) => setError(mensajeDeError(e)));
   };
 
   const borrar = async () => {
@@ -286,6 +388,7 @@ function TarjetaPedido({
       </ul>
       {pedido.nota && <p className="pedido__nota">«{pedido.nota}»</p>}
       <Entrega pedido={pedido} />
+      <Pago pedido={pedido} verComprobante={verComprobante} />
       <div className="pedido__total">
         <span>Total</span>
         <strong>{bs(pedido.total)}</strong>
@@ -293,11 +396,56 @@ function TarjetaPedido({
 
       {error && <Aviso tipo="error">{error}</Aviso>}
 
-      {confirmar === "entregar" && (
+      {confirmar === "pagar" && (
         <div className="pedido__confirmar">
           <p>
-            ¿Entregar y cobrar <strong>{bs(pedido.total)}</strong>? Se registra la venta y baja el stock.
+            ¿Registrar el pago de <strong>{bs(pedido.total)}</strong>? Se registra la venta y el pedido queda agendado. Los
+            insumos se descuentan cuando empieces a prepararlo.
           </p>
+          <Opciones
+            etiqueta="Cómo pagó"
+            mostrarEtiqueta={false}
+            valor={metodo}
+            alCambiar={setMetodo}
+            opciones={(["QR", "EFECTIVO"] as const).map((m) => ({ valor: m, texto: nombreMetodo[m] }))}
+          />
+          {metodo === "QR" && (
+            <Campo etiqueta="Nro. de operación (opcional)" ayuda="Evita que el mismo comprobante pague dos pedidos.">
+              <input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Ej. 0012345678" />
+            </Campo>
+          )}
+          <div className="fila-botones">
+            <Button variante="exito" disabled={ocupado} onClick={() => void pagar()}>
+              Sí, pagó
+            </Button>
+            <Button onClick={() => setConfirmar(null)}>Volver</Button>
+          </div>
+        </div>
+      )}
+      {confirmar === "anular" && (
+        <div className="pedido__confirmar">
+          <p>
+            ¿Anular el pago? Se borra la venta de <strong>{bs(pedido.total)}</strong> y el pedido queda por pagar. Úsalo solo si
+            se marcó por error.
+          </p>
+          <div className="fila-botones">
+            <Button variante="peligro" disabled={ocupado} onClick={() => void anularPago()}>
+              Sí, anular pago
+            </Button>
+            <Button onClick={() => setConfirmar(null)}>Volver</Button>
+          </div>
+        </div>
+      )}
+      {confirmar === "entregar" && (
+        <div className="pedido__confirmar">
+          {pedido.pagado ? (
+            <p>¿Marcar el pedido {pedido.numero} como entregado? Ya está pagado.</p>
+          ) : (
+            <p>
+              Este pedido no tiene pago registrado. ¿Entregar y cobrar <strong>{bs(pedido.total)}</strong>? Se registra la venta
+              {pedido.insumosDescontadosEn ? "." : " y se descuentan sus insumos."}
+            </p>
+          )}
           <div className="fila-botones">
             <Button variante="exito" disabled={ocupado} onClick={() => void cambiar("ENTREGADO")}>
               Sí, entregado
@@ -308,6 +456,14 @@ function TarjetaPedido({
       )}
       {confirmar === "cancelar" && (
         <div className="pedido__confirmar">
+          {pedido.pagado && (
+            <p className="negativo">
+              Ya está pagado: al cancelarlo se anula su venta de {bs(pedido.total)}. Devuélvele el dinero al cliente.
+              {pedido.estado === "EN_PREPARACION" || pedido.estado === "LISTO"
+                ? " Los insumos ya se usaron: no vuelven al stock."
+                : ""}
+            </p>
+          )}
           <Campo etiqueta="¿Por qué se cancela? (opcional)">
             <input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej. el cliente ya no lo necesita" />
           </Campo>
@@ -333,6 +489,11 @@ function TarjetaPedido({
 
       {confirmar === null && (
         <footer className="pedido__acciones">
+          {pedido.estado === "POR_PAGAR" && (
+            <Button variante="exito" disabled={ocupado} onClick={() => setConfirmar("pagar")}>
+              <MdOutlineCheckCircle aria-hidden /> Registrar pago
+            </Button>
+          )}
           {paso && (
             <Button
               variante={paso.estado === "ENTREGADO" ? "exito" : "primario"}
@@ -354,15 +515,22 @@ function TarjetaPedido({
                 <MdOutlineUndo aria-hidden /> Deshacer
               </Button>
             )}
+            {pedido.pagado && pedido.estado === "PENDIENTE" && (
+              <Button tamano="chico" variante="texto" title="Se marcó pagado por error" onClick={() => setConfirmar("anular")}>
+                Anular pago
+              </Button>
+            )}
             <Button tamano="chico" variante="texto" onClick={editar}>
               <MdOutlineEdit aria-hidden /> Editar
             </Button>
             <Button tamano="chico" variante="texto" onClick={() => setConfirmar("cancelar")}>
               Cancelar
             </Button>
-            <Button tamano="chico" variante="texto" aria-label="Borrar pedido" onClick={() => setConfirmar("borrar")}>
-              <MdDeleteOutline aria-hidden />
-            </Button>
+            {!pedido.pagado && (
+              <Button tamano="chico" variante="texto" aria-label="Borrar pedido" onClick={() => setConfirmar("borrar")}>
+                <MdDeleteOutline aria-hidden />
+              </Button>
+            )}
           </div>
         </footer>
       )}
@@ -392,6 +560,35 @@ function Entrega({ pedido }: { pedido: Pedido }) {
       <span className={pedido.costoEnvio === null ? "secundario" : undefined}>
         · Envío {pedido.costoEnvio === null ? "por cotizar" : bs(pedido.costoEnvio)}
       </span>
+    </p>
+  );
+}
+
+// Pago (D86): pagado con su método y comprobante, o lo que falta.
+function Pago({ pedido, verComprobante }: { pedido: Pedido; verComprobante: () => void }) {
+  if (pedido.pagado) {
+    return (
+      <p className="pedido__pago pedido__pago--hecho">
+        <MdOutlineCheckCircle aria-hidden /> Pagado
+        {pedido.metodoPago ? ` · ${nombreMetodo[pedido.metodoPago]}` : ""}
+        {pedido.pagadoEn ? ` · ${nombreDia(pedido.pagadoEn.slice(0, 10)).toLowerCase()}` : ""}
+        {pedido.tieneComprobante && (
+          <button type="button" className="pedido__comprobante" onClick={verComprobante}>
+            <MdOutlineReceiptLong aria-hidden /> Ver comprobante
+          </button>
+        )}
+      </p>
+    );
+  }
+  return (
+    <p className="pedido__pago pedido__pago--falta">
+      {pedido.estado !== "POR_PAGAR"
+        ? "Sin pago registrado: se cobra al entregar."
+        : pedido.entrega === "DELIVERY" && pedido.costoEnvio === null
+          ? "Cotización: falta cotizar el envío (Atención)."
+          : pedido.entrega === "DELIVERY" && !pedido.envioAceptadoEn
+            ? "Cotización: esperando que acepte el costo del envío."
+            : "Cotización: se agenda cuando pague."}
     </p>
   );
 }
@@ -447,49 +644,39 @@ function HistorialPedidos({ pedidos, cargando }: { pedidos: Pedido[] | undefined
   );
 }
 
-// ---------- Anotar o editar un pedido ----------
+// ---------- Editar un pedido ----------
+// Los pedidos nuevos se anotan en Caja (D98); aquí solo se corrigen día, hora, entrega, productos y nota (M3).
 
 type LineaForm = { clave: number; productoId: number | null; cantidad: string };
 
-function FormularioPedido({
+function EditarPedido({
   pedido,
   productos,
   clientes,
   cerrar,
   guardado,
 }: {
-  pedido: Pedido | null;
+  pedido: Pedido;
   productos: Producto[];
   clientes: Cliente[];
   cerrar: () => void;
   guardado: (texto: string) => Promise<void>;
 }) {
   const hoy = hoyISO();
-  const [nombreCliente, setNombreCliente] = useState(pedido?.cliente.nombre ?? "");
-  const [celular, setCelular] = useState(pedido?.cliente.celular ?? "");
-  const [tipoNuevo, setTipoNuevo] = useState<TipoCliente>("MINORISTA");
-  const [fecha, setFecha] = useState(pedido?.fechaEntrega ?? hoy);
-  const [horaEntrega, setHoraEntrega] = useState(pedido?.horaEntrega ?? "");
-  const [nota, setNota] = useState(pedido?.nota ?? "");
-  const [entrega, setEntrega] = useState<TipoEntrega>(pedido?.entrega ?? "RECOJO");
-  const [ubicacion, setUbicacion] = useState(pedido?.ubicacion ?? "");
-  const [costoEnvio, setCostoEnvio] = useState(pedido?.costoEnvio ?? "");
+  const [fecha, setFecha] = useState(pedido.fechaEntrega);
+  const [horaEntrega, setHoraEntrega] = useState(pedido.horaEntrega ?? "");
+  const [nota, setNota] = useState(pedido.nota ?? "");
+  const [entrega, setEntrega] = useState<TipoEntrega>(pedido.entrega);
+  const [ubicacion, setUbicacion] = useState(pedido.ubicacion ?? "");
+  const [costoEnvio, setCostoEnvio] = useState(pedido.costoEnvio ?? "");
+  const productosBloqueados = pedido.pagado;
   const [lineas, setLineas] = useState<LineaForm[]>(
-    pedido
-      ? pedido.lineas.map((l, i) => ({ clave: i, productoId: l.productoId, cantidad: l.cantidad }))
-      : [{ clave: 0, productoId: null, cantidad: "1" }],
+    pedido.lineas.map((l, i) => ({ clave: i, productoId: l.productoId, cantidad: l.cantidad })),
   );
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
 
-  const clienteSel = pedido
-    ? (clientes.find((c) => c.id === pedido.cliente.id) ?? null)
-    : nombreCliente.trim()
-      ? (clientes.find((c) => mismoNombre(c.nombre, nombreCliente)) ?? null)
-      : null;
-  const clienteNuevo = !pedido && clienteSel === null && nombreCliente.trim() !== "";
-  const celularValido = celular.replace(/\D/g, "").length >= 7;
-
+  const clienteSel = clientes.find((c) => c.id === pedido.cliente.id) ?? null;
   const productoDe = (id: number | null) => productos.find((p) => p.id === id) ?? null;
   const precioDe = (id: number | null) => {
     const producto = productoDe(id);
@@ -507,10 +694,9 @@ function FormularioPedido({
     lineas.length > 0 &&
     lineas.every((l) => l.productoId !== null && esNumeroValido(l.cantidad) && Number(normalizarNumero(l.cantidad)) > 0) &&
     !repetido;
-  const fechaValida = /^\d{4}-\d{2}-\d{2}$/.test(fecha) && (fecha >= hoy || fecha === pedido?.fechaEntrega);
+  const fechaValida = /^\d{4}-\d{2}-\d{2}$/.test(fecha) && (fecha >= hoy || fecha === pedido.fechaEntrega);
   const envioValido = costoEnvio.trim() === "" || esNumeroValido(costoEnvio);
-  const datosValidos =
-    lineasValidas && fechaValida && envioValido && (pedido !== null || (nombreCliente.trim() !== "" && celularValido));
+  const datosValidos = lineasValidas && fechaValida && envioValido;
 
   const cambiarLinea = (clave: number, cambio: Partial<LineaForm>) =>
     setLineas((actuales) => actuales.map((l) => (l.clave === clave ? { ...l, ...cambio } : l)));
@@ -518,32 +704,20 @@ function FormularioPedido({
   const guardar = async () => {
     setGuardando(true);
     setError(null);
-    const datos = {
-      lineas: lineas.map((l) => ({ productoId: l.productoId as number, cantidad: normalizarNumero(l.cantidad) })),
-      fechaEntrega: fecha,
-      horaEntrega: horaEntrega || null,
-      nota: nota.trim() || null,
-      entrega,
-      ubicacion: entrega === "DELIVERY" ? ubicacion.trim() || null : null,
-      costoEnvio: entrega === "DELIVERY" && costoEnvio.trim() !== "" ? normalizarNumero(costoEnvio) : null,
-    };
     try {
-      if (pedido) {
-        await api.editarPedidoEntrega(pedido.id, datos);
-        await guardado(`Pedido ${pedido.numero} actualizado.`);
-      } else {
-        const creado = await api.crearPedidoEntrega({
-          ...datos,
-          clienteId: clienteSel?.id,
-          clienteNombre: clienteSel ? undefined : nombreCliente.trim(),
-          clienteTipo: clienteSel ? undefined : tipoNuevo,
-          celular: celular.trim(),
-        });
-        await guardado(
-          `Pedido ${creado.numero} anotado para ${nombreDia(creado.fechaEntrega).toLowerCase()} (${bs(creado.total)}) a ${creado.cliente.nombre}` +
-            (creado.clienteNuevo ? ", que quedó guardado en Clientes." : "."),
-        );
-      }
+      await api.editarPedidoEntrega(pedido.id, {
+        // Los productos de un pedido pagado no se cambian: ya es venta (D86).
+        ...(productosBloqueados
+          ? {}
+          : { lineas: lineas.map((l) => ({ productoId: l.productoId as number, cantidad: normalizarNumero(l.cantidad) })) }),
+        fechaEntrega: fecha,
+        horaEntrega: horaEntrega || null,
+        nota: nota.trim() || null,
+        entrega,
+        ubicacion: entrega === "DELIVERY" ? ubicacion.trim() || null : null,
+        costoEnvio: entrega === "DELIVERY" && costoEnvio.trim() !== "" ? normalizarNumero(costoEnvio) : null,
+      });
+      await guardado(`Pedido ${pedido.numero} actualizado.`);
     } catch (e) {
       setError(mensajeDeError(e));
       setGuardando(false);
@@ -552,57 +726,21 @@ function FormularioPedido({
 
   return (
     <Ventana
-      titulo={pedido ? `Editar pedido N.º ${pedido.numero}` : "Nuevo pedido"}
-      subtitulo="No es venta todavía: se cobra y descuenta el stock al entregarlo."
+      titulo={`Editar pedido N.º ${pedido.numero}`}
+      subtitulo="El cliente paga primero: con el pago se registra la venta y el pedido se agenda; los insumos bajan al empezar a prepararlo."
       cerrar={cerrar}
     >
       <div className="pedido-form">
         <div className="pedido-form__fila">
-          {pedido ? (
-            <Campo etiqueta="Cliente">
-              <input value={pedido.cliente.nombre} disabled />
-            </Campo>
-          ) : (
-            <>
-              <Campo etiqueta="Cliente">
-                <BuscadorCliente
-                  clientes={clientes}
-                  texto={nombreCliente}
-                  alCambiarTexto={setNombreCliente}
-                  alElegir={(c) => {
-                    setNombreCliente(c.nombre);
-                    setCelular(c.celular ?? "");
-                  }}
-                  placeholder="Escribe el nombre"
-                  autoFocus
-                />
-              </Campo>
-              <Campo etiqueta="Celular">
-                <input value={celular} onChange={(e) => setCelular(e.target.value)} inputMode="tel" placeholder="Ej. 71234567" />
-              </Campo>
-            </>
-          )}
+          <Campo etiqueta="Cliente">
+            <input value={pedido.cliente.nombre} disabled />
+          </Campo>
         </div>
-        {!pedido && nombreCliente.trim() !== "" && !celularValido && (
-          <p className="negativo pedido-form__detalle">
-            Anota el celular (al menos 7 dígitos) para poder avisarle cuando esté listo.
-          </p>
-        )}
         {clienteSel && (
           <p className="secundario pedido-form__detalle">
             <TipoClienteBadge tipo={clienteSel.tipo} />{" "}
             {clienteSel.precios.length > 0 ? "Con precios acordados: ya se usan abajo." : "Precio de venta normal."}
           </p>
-        )}
-        {clienteNuevo && (
-          <div className="pedido-form__detalle">
-            <span className="etiqueta etiqueta-positiva">Cliente nuevo</span>{" "}
-            <span className="secundario">Se guardará en Clientes como</span>{" "}
-            <select value={tipoNuevo} onChange={(e) => setTipoNuevo(e.target.value as TipoCliente)}>
-              <option value="MINORISTA">Minorista</option>
-              <option value="MAYORISTA">Mayorista</option>
-            </select>
-          </div>
         )}
 
         <div className="pedido-form__fila">
@@ -614,28 +752,15 @@ function FormularioPedido({
           </Campo>
         </div>
 
-        <div className="pedido-form__entrega" role="radiogroup" aria-label="Entrega">
-          <span className="campo-etiqueta">Entrega</span>
-          <div className="pedido-form__opciones">
-            {(
-              [
-                ["RECOJO", "Recoge en el local", MdOutlineStorefront],
-                ["DELIVERY", "Delivery", MdOutlineDeliveryDining],
-              ] as const
-            ).map(([valor, texto, Icono]) => (
-              <button
-                key={valor}
-                type="button"
-                role="radio"
-                aria-checked={entrega === valor}
-                className={`pedido-form__opcion ${entrega === valor ? "pedido-form__opcion--activa" : ""}`}
-                onClick={() => setEntrega(valor)}
-              >
-                <Icono aria-hidden /> {texto}
-              </button>
-            ))}
-          </div>
-        </div>
+        <Opciones
+          etiqueta="Entrega"
+          valor={entrega}
+          alCambiar={setEntrega}
+          opciones={[
+            { valor: "RECOJO", texto: "Recoge en el local", icono: MdOutlineStorefront },
+            { valor: "DELIVERY", texto: "Delivery", icono: MdOutlineDeliveryDining },
+          ]}
+        />
         {entrega === "DELIVERY" && (
           <div className="pedido-form__fila">
             <Campo etiqueta="Ubicación (Google Maps o dirección)">
@@ -653,8 +778,11 @@ function FormularioPedido({
           </div>
         )}
 
-        <div className="pedido-form__productos">
+        <fieldset className="pedido-form__productos" disabled={productosBloqueados}>
           <span className="campo-etiqueta">Productos</span>
+          {productosBloqueados && (
+            <p className="secundario pedido-form__detalle">Ya está pagado: para cambiar los productos, primero anula el pago.</p>
+          )}
           {lineas.map((l) => (
             <div key={l.clave} className="pedido-form__linea">
               <select
@@ -709,7 +837,7 @@ function FormularioPedido({
           >
             <MdAdd aria-hidden /> Agregar producto
           </Button>
-        </div>
+        </fieldset>
 
         <Campo etiqueta="Nota (opcional)">
           <textarea
@@ -727,7 +855,7 @@ function FormularioPedido({
         {error && <Aviso tipo="error">{error}</Aviso>}
         <div className="fila-botones">
           <Button variante="primario" disabled={!datosValidos || guardando} onClick={() => void guardar()}>
-            {pedido ? "Guardar cambios" : "Anotar pedido"}
+            Guardar cambios
           </Button>
           <Button onClick={cerrar}>Cancelar</Button>
         </div>

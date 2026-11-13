@@ -134,7 +134,6 @@
   font-weight: 600;
 }
 
-
 /* Los botones de mes hacen de etiqueta del gráfico (no se repiten los meses). */
 .historial__grafico .bar-chart__etiquetas {
   display: none;

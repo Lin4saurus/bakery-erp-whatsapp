@@ -430,3 +430,111 @@ Decisión D44. Sin migración (el celular ya existía en `Cliente`).
 - [x] API `/api/atenciones` (listar, pausa por celular, crear sin repetir, resolver = devolver al agente) y `?confirmado=no` en `POST /api/pedidos`. 93/93 tests.
 - [x] Pantalla **Atención** (insignia en el menú, «Abrir chat», «Listo, devolver al agente») y entrega/ubicación/envío en las tarjetas y el formulario de Pedidos.
 - [x] Agente n8n publicado: bienvenida y menú fijos, mensajes juntos (12 s), ubicación compartida → enlace de Maps, `pedir_atencion`, pausa por atención o porque escribió la dueña, candado de confirmación. Probado contra una copia (3002); la copia y la memoria de prueba se borraron. Datos reales intactos.
+
+## El cliente paga primero: pago por QR y comprobantes (D86) — COMPLETADO
+
+- [x] Migración `pago_por_qr` (respaldo antes): estado `POR_PAGAR`, `pagadoEn`, `metodoPago`, `montoPagado`, `pagoReferencia` (única), `comprobante`; `Atencion.adjunto` y motivo `VERIFICAR_PAGO`.
+- [x] API: `POST/DELETE /api/pedidos/:id/pago`, `POST /api/pedidos/pago-whatsapp`, `GET /api/pedidos/:id/comprobante`, `GET /api/atenciones/:id/adjunto`; sin pago no se agenda; cancelar uno pagado anula su venta. 95/95 tests.
+- [x] Pedidos: grupo «Esperando pago», «Registrar pago» (QR/efectivo), «Pagado · QR · Ver comprobante», «Anular pago», «¿Ya pagó?» al anotar. Atención: «Ver comprobante» y «Confirmar pago». Inicio: los por pagar se cuentan aparte.
+- [x] Agente n8n publicado: QR tras anotar el pedido, lectura de comprobantes (imagen/PDF) con Gemini y confirmación automática o revisión. Probado en una copia: PDF de Bs 32 → pagado y agendado; Bs 20 con nro. repetido → Atención; foto que no es comprobante → Atención. Copia y memoria de prueba borradas; datos reales intactos.
+
+## Los insumos bajan al empezar a preparar (D87) — COMPLETADO
+
+- [x] Migración `insumos_al_preparar` (respaldo antes): `Pedido.insumosDescontadosEn`; los ya pagados quedaron marcados como descontados.
+- [x] Pagar registra la venta sin movimientos de stock; «Empezar a preparar» descuenta (con alertas de stock bajo); «Deshacer» devuelve; cancelar en preparación no devuelve; «Anular pago» solo en «Agendado».
+- [x] Textos de Pedidos actualizados y pedidos demo recreados con la regla nueva.
+
+## Avisos en vivo y número primero en Atención (D88) — COMPLETADO
+
+- [x] `GET /api/eventos` (Server-Sent Events) y aviso después de cada cambio en `/api/pedidos` y `/api/atenciones`; `frontend/src/avisos.ts` con una conexión por pestaña y `useAlAvisar` en el menú, Atención, Pedidos e Inicio. Respaldo: revisión cada 60 s.
+- [x] Atención: número sin 591 en grande y el nombre debajo; título de la pestaña con «(n)».
+- [x] Verificado en una copia: un aviso nuevo aparece en ~1 s sin recargar (tarjeta, contador del menú y título).
+
+## Cotización con delivery (D89) — COMPLETADO
+
+- [x] Migración `envio_aceptado` (respaldo antes): `Pedido.envioAceptadoEn`.
+- [x] API: `POST /api/atenciones/:id/costo-envio` (guarda el costo, resuelve el chat y llama a n8n), `POST /api/pedidos/cotizacion/aceptar-envio`, `POST /api/pedidos/cotizacion/cancelar`; pago de delivery sin envío aceptado → revisión. 97/97 tests.
+- [x] Atención: campo «Costo del envío según Yango» y «Enviar costo al cliente». Pedidos: estado «Cotización» con lo que falta.
+- [x] n8n publicado: webhook `dulzura-envio`, herramientas `aceptar_envio` y `cancelar_cotizacion`, QR solo con recojo confirmado o envío aceptado, mensajes sin número de pedido, reintento si Gemini está saturado. Probado en una copia: delivery completo (un solo mensaje «Ya le avisé…», costo Bs 12, acepta → QR por Bs 32) y cliente que rechaza un envío de Bs 45 (cotización cancelada). Copia y memoria de prueba borradas.
+
+## Sprint 4 de la auditoría: orden y deuda (D103) — COMPLETADO
+
+- [x] M3: `EditarPedido` (sin la rama «crear», muerta desde D98). M5 + U3: `components/ui/Opciones` (radios con flechas) en Caja y Pedidos; fuera `.pedido-form__opcion` y `.caja__tipo-opcion`.
+- [x] M2: `OpcionesVenta { exigirCelular, descontarStock }` en vez de booleanos sueltos (registrarPedidoVenta, registrarVentaDelPedido, pagarPedido, pagarPedidoPorId). No se movió a `services/`: arrastraba ~200 líneas atadas a los esquemas de la ruta.
+- [x] D1: `elegirAConservar` (30 recientes + último por día 30 días + último por mes 12 meses).
+- [x] D3: `GET/PUT /api/configuracion/gastos-fijos` (Configuracion `finanzas.gastosFijosMensuales`) y edición en la tarjeta del Inicio.
+- [x] U2 (barra del pedido en el celular), U4 (campos y tipos en palabras), S5 (puntos y guiones en nombres; ningún choque entre los 60 clientes), M6 (fuera `scratch_q.mts`, variables sin uso en Caja, Clientes, Historial e Insumos).
+- [x] M4: test que compara, producto por producto, el costo con el consumo de inventario × precio. 113/113 tests. Probado en una copia (celular y escritorio); copia borrada.
+- [ ] Pendiente menor: quitar `Producto.disponible` (sin uso desde D49) en una próxima migración.
+
+## Sprint 3 de la auditoría: rendimiento y precisión (D102) — COMPLETADO
+
+- [x] R1: `omit` de `comprobante`/`adjunto` en las listas; `tieneComprobante`/`tieneAdjunto` con una consulta de ids.
+- [x] R2: `precargarCosteo` (una consulta) + `MemoCosteo` por petición en `GET /api/productos`.
+- [x] R4/R5: `useDatos` con turnos; Pedidos recarga solo la pestaña visible al recibir un aviso.
+- [x] B1: `Atencion.celularClave` + índices `(celularClave, estado)`, `(pedidoId, estado)`, `(referencia)` (migración `20261113180000_atencion_indices`, respaldo previo).
+- [x] S3 + M1: `services/comprobantes.ts` (`evaluarComprobante`, `redactarDescripcion`) con Decimal; la ruta solo consulta y escribe.
+- [x] El ERP escucha en 127.0.0.1 y ::1 (por «localhost» se perdían ~200 ms por pedido). 108/108 tests.
+
+## Sprint 2 de la auditoría: el agente no falla en silencio (D101) — COMPLETADO
+
+- [x] N2: workflow `n4Xt9hMkyM0j3ox2` (Error Trigger → aviso por WhatsApp a `whatsapp_vendedora`, con freno de repetidos) como `errorWorkflow` del agente; nodos «Falla: …» tras el aviso de la IA, el del ERP apagado y el comprobante sin registrar. Probado con datos fijos (sin envío real).
+- [x] N1: `dulzura_chat_memoria.creado` + índice; «Guardar mensaje» borra los chats sin mensajes en 7 días.
+- [x] N4: tabla `Configuracion` (migración `20261113170000_configuracion`), `GET/PUT /api/agente/config`, aviso en Inicio; nodo «Modo prueba (ERP)» antes de «Normalizar mensaje». Probado: un número fuera de la lista se ignora.
+- [x] N3: `GET /api/clientes/por-celular/:celular` → `{ cliente | null }`; «Leer clientes (ERP)» y «Preparar contexto» lo usan. 104/104 tests.
+
+## Sprint 1 de la auditoría: seguridad (D99) — COMPLETADO
+
+- [x] S1: comprobantes solo foto/PDF (ERP y n8n); `abrirArchivo` descarga los tipos raros.
+- [x] U1: «Llegó el pago» con confirmación en dos pasos. Probado en una copia; copia borrada.
+- [x] S4: 15 MB solo en `/pedidos/pago-whatsapp` y `/pedidos/:id/pago`; 100 kB en el resto (413 en español). 102/102 tests.
+- [x] S2 (ERP): escucha en 127.0.0.1; verificado que n8n llega por host.docker.internal y que desde la IP de la red no responde.
+- [x] S2 (Docker): n8n publicado en 127.0.0.1:5678 y contenedores de n8n-host recreados (Postgres, Evolution y n8n solo en esta PC; n8n con hora de La Paz). Verificado: WhatsApp «open», Evolution → n8n, n8n → ERP, workflow activo; desde la IP de la red no responden.
+8n-host` (Postgres y Evolution ya lo tienen en el compose, pero corren con la configuración vieja). Espera el visto bueno.
+- [x] B2 (D100): la demo se mantiene para la defensa; sus 13 ventas (Bs 834) ya no salen en las listas ni suman en los totales. 103/103 tests; verificado en la base real (19 → 6 ventas, Bs 1 155 → 321).
+
+## Los pedidos se anotan en Caja (D98) — COMPLETADO
+
+- [x] Caja: «Ahora, en el local» / «Para entregar después» con día, hora, recojo o delivery, nota y «¿Ya pagó?»; Pedidos sin «Nuevo pedido».
+- [x] `POST /api/pedidos` acepta `precioUnitario` por línea. 101/101 tests. Probado en una copia; copia borrada.
+
+## «Ya está agendado» al confirmar el pago (D97) — COMPLETADO
+
+- [x] `POST /api/pedidos/:id/pago` con `avisarCliente` → `avisarAlCliente({ tipo: "pago_confirmado", ... })`; responde `aviso`. Atención lo manda y avisa si no se pudo escribir. 100/100 tests.
+- [x] n8n publicado: «Mensaje del costo de envío» arma también el «ya está agendado». Probado en una copia: el mensaje llegó al 61317418; copia borrada.
+
+## Pago bueno tras uno rechazado y destino por cuenta (D96) — COMPLETADO
+
+- [x] `pago-whatsapp`: un comprobante válido actualiza la tarjeta «Posible estafa» pendiente de esa cotización (queda «Pago por confirmar» con la nota del rechazo anterior); destino por nombre o por cuenta (`cuentaDestino` / `cuentaTitular`). 100/100 tests.
+- [x] n8n: el agente tiene modelo de respaldo (`Gemini (respaldo)`, gemini-2.5-flash) si Gemini 3.1 da 503 por demanda; si fallan los dos, «Avisar que falló la IA (Evolution)» le pide al cliente que vuelva a escribir.
+- [x] n8n publicado: Gemini lee `cuenta_destino` (regla BCP: «De la cuenta / A nombre de» es el origen); `Titular del QR` lee `cuenta_receptor`; «Registrar pago (ERP)» con 3 reintentos. Probado en una copia con el comprobante real; copia borrada.
+
+## Filtro anti-estafas: fecha de hoy y cero confianza (D95) — COMPLETADO
+
+- [x] Migración `saldo_pendiente` (respaldo antes): `Atencion.saldoPendiente`; `montoReportado` solo en comprobantes válidos.
+- [x] `pago-whatsapp`: resultado `rechazado` (con `motivosCliente`, `monto`, `saldo`), fecha distinta a hoy o sin fecha, `estadoPago` pendiente/rechazado, pagos fraccionados; pago parcial válido como `VERIFICAR_PAGO` con saldo. 99/99 tests.
+- [x] Atención: «Comprobante rechazado: sus Bs X no se descuentan» con los motivos en rojo y el saldo; etiqueta «Pago parcial» sin botón de confirmar. Probado en una copia; copia borrada.
+- [x] n8n publicado: Gemini lee `estado_pago` y marcas de agua; mensaje «❌ COMPROBANTE RECHAZADO» con motivo, monto no descontado y saldo pendiente.
+
+## Incongruencias en lista y saldo incompleto (D94) — COMPLETADO
+
+- [x] `pago-whatsapp`: descripción por renglones (`!- ` grave, `- ` normal), sin nro. de pedido; resultado `incompleto` con `faltante`; saldo = total − comprobantes pendientes de esa cotización; reenvío del mismo nro. actualiza su tarjeta. 98/98 tests.
+- [x] Atención: lista con el monto incompleto en rojo, sin «Dice el comprobante» ni «Pedido N.º». Probado en una copia; copia borrada.
+- [x] n8n publicado: mensaje de saldo incompleto, Gemini no marca «editado» por la fecha, solo atiende el 61317418 (`SOLO_NUMEROS_DE_PRUEBA` en «Normalizar mensaje»; vaciarlo para producción).
+
+## Comprobantes sin contenido y fecha del pago (D93) — COMPLETADO
+
+- [x] n8n publicado: `¿Falta el archivo?` → `Descargar archivo (Evolution)` (`/chat/getBase64FromMediaMessage`) → `Preparar archivo` → `¿Es PDF?`. Fotos enviadas como documento se leen como imagen.
+- [x] ERP: fecha del pago anterior a la cotización (o a hoy, sin cotización) o futura → incongruencia. Test nuevo.
+
+## Delivery: el resumen llega con el envío (D92) — COMPLETADO
+
+- [x] `POST /api/pedidos?confirmado=no` ya no bloquea un delivery (se confirma al ver el envío). `costo-envio` le manda a n8n las líneas del pedido y la ubicación. Test nuevo.
+- [x] n8n publicado: prompt del agente (delivery sin resumen; confirma el resumen con envío → `aceptar_envio` → QR) y mensaje del costo con el resumen completo y «¿Confirmas tu pedido?».
+
+## Pago por confirmar y posible estafa (D91) — COMPLETADO
+
+- [x] Migración `pago_por_confirmar` (respaldo antes): `Atencion.montoReportado` y `Atencion.referencia`; motivo `POSIBLE_ESTAFA`.
+- [x] `POST /api/pedidos/pago-whatsapp` ya no paga solo: congruente → `por_confirmar` (atención «Pago por confirmar»); incongruente → `revision` (atención «Posible estafa»). Nuevas banderas: imagen que parece editada y nro. de operación repetido en otro chat en espera. 97/97 tests.
+- [x] Atención: etiqueta verde «Pago por confirmar» con «Llegó el pago», tarjeta roja «⚠ Posible estafa» con «Sí llegó, confirmar», y la línea «Dice el comprobante: monto · nro.». Probado en una copia: confirmar agenda el pedido y registra la venta; copia borrada.
+- [x] n8n publicado: Gemini devuelve `parece_editado` y `motivo_sospecha`; mensaje al cliente «¡Gracias por tu compra! 🍰» cuando el comprobante cuadra.

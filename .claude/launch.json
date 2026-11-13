@@ -20,7 +20,8 @@
       "env": {
         "PORT": "3002",
         "DATABASE_URL": "file:./prueba-agente.db",
-        "BACKUP_AUTO": "false"
+        "BACKUP_AUTO": "false",
+        "N8N_WEBHOOK_ENVIO": ""
       },
       "port": 3002
     }

@@ -8,6 +8,7 @@ const normalizar = (texto: string) =>
   texto
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
+    .replace(/[.\-_'’]/g, " ") // puntos y guiones cuentan como espacio (D45, S5): «María-José» = «Maria José»
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();

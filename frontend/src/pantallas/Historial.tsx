@@ -312,7 +312,6 @@ function ResumenAnio({
       (f) => f.total,
     ),
   );
-  const mesesConVentas = porMes.filter((v) => v > 0).length;
   const barras: Barra[] = MESES.map((m, i) => ({
     etiqueta: m,
     valor: Math.round(porMes[i] ?? 0),

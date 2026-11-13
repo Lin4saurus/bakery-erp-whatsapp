@@ -108,3 +108,33 @@
   color: var(--color-warning);
 }
 
+/* Gastos fijos editables en la tarjeta (D103). */
+.indicador__lapiz {
+  border: 0;
+  background: none;
+  color: var(--color-text-secondary);
+  padding: 0 2px;
+  cursor: pointer;
+  vertical-align: -2px;
+}
+
+.indicador__lapiz:hover {
+  color: var(--color-primary);
+}
+
+.indicador__editar {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.indicador__editar input {
+  width: 90px;
+  padding: 4px 8px;
+}
+
+.indicador__error {
+  margin: 6px 0 0;
+  font-size: 13px;
+}

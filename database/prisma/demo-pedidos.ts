@@ -1,10 +1,13 @@
 // Pedidos de demostración (D81) para mostrar la agenda de Pedidos: atrasados, hoy, mañana y la semana.
 // Usa clientes y productos que ya existen; no crea clientes. Todos quedan con esDemo = true.
 //   npm run demo:pedidos          → borra los demo anteriores y crea los de hoy en adelante
-//   npm run demo:pedidos:borrar   → solo los borra (si alguno se entregó, borra también su venta y devuelve el stock)
-import { EstadoPedido, OrigenPedido, Prisma } from "@prisma/client";
+//   npm run demo:pedidos:borrar   → solo los borra (los pagados: borra también su venta y devuelve el stock)
+// El cliente paga primero (D86): los demo quedan pagados (con su venta y descuento de stock, como en la app),
+// salvo los marcados `porPagar`, que muestran el grupo «Esperando pago».
+import { EstadoPedido, MetodoPago, OrigenPedido, Prisma } from "@prisma/client";
 import { prisma } from "../../backend/src/prisma";
 import { eliminarVenta } from "../../backend/src/routes/ventas";
+import { pagarPedidoPorId } from "../../backend/src/routes/pedidos";
 
 type Demo = {
   dias: number; // desde hoy (−1 = ayer)
@@ -14,6 +17,7 @@ type Demo = {
   estado?: EstadoPedido;
   nota?: string;
   motivo?: string;
+  porPagar?: boolean; // todavía no pagó (D86)
   lineas: [string, number][];
 };
 
@@ -62,6 +66,7 @@ const DEMOS: Demo[] = [
     hora: "17:00",
     cliente: "Teresa Subirana",
     origen: OrigenPedido.WHATSAPP,
+    porPagar: true,
     lineas: [["Fresas con crema y brownie", 2]],
   },
   { dias: 2, hora: "11:00", cliente: "Paola Andrea Lozada", nota: "Sin frutilla encima", lineas: [["Tres leches", 1]] },
@@ -79,6 +84,7 @@ const DEMOS: Demo[] = [
     hora: "16:00",
     cliente: "Yesica Serrate",
     origen: OrigenPedido.WHATSAPP,
+    porPagar: true,
     lineas: [["Frutillas bañadas en chocolate", 4]],
   },
   { dias: 6, cliente: "Cinthya Ballejos", nota: "Para 30 personas, entrega a domicilio", lineas: [["Tres leches mega", 1]] },
@@ -140,8 +146,9 @@ async function crearDemos(): Promise<number> {
       });
     }
     if (lineas.length === 0) continue;
-    const estado = d.estado ?? EstadoPedido.PENDIENTE;
-    await prisma.pedido.create({
+    const pagado = !d.porPagar && d.estado !== EstadoPedido.CANCELADO;
+    const estado = d.estado ?? (pagado ? EstadoPedido.PENDIENTE : EstadoPedido.POR_PAGAR);
+    const pedido = await prisma.pedido.create({
       data: {
         numero: numero++,
         clienteId: cliente.id,
@@ -157,6 +164,18 @@ async function crearDemos(): Promise<number> {
         lineas: { create: lineas },
       },
     });
+    if (pagado) {
+      await prisma.$transaction((tx) =>
+        pagarPedidoPorId(
+          tx,
+          pedido.id,
+          {
+            metodo: pedido.origen === OrigenPedido.WHATSAPP ? MetodoPago.QR : MetodoPago.EFECTIVO,
+          },
+          { exigirCelular: false },
+        ),
+      );
+    }
     creados++;
   }
   return creados;
