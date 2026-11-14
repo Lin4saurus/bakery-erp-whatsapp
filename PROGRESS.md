@@ -451,3 +451,7 @@
 1. `package.json` del backend con Prisma + TypeScript.
 2. `seed.ts` con insumos, rellenos y 5 queques.
 3. Primera migración y verificación contra la tabla §4.
+
+## 2026-11-14 — Pedidos del Inicio clicables (D104)
+
+- Filas del Inicio como enlaces `#pedidos/<id>`; Pedidos baja hasta la tarjeta y la ilumina. App.tsx lee la pantalla antes de la barra del hash.

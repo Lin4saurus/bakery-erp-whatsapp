@@ -420,6 +420,8 @@ function ProximosPedidos({ pedidos: todos, hoy }: { pedidos: Pedido[]; hoy: stri
           <ul className="inicio-pedidos__lista">
             {cercanos.slice(0, 6).map((p) => (
               <li key={p.id} className={p.fechaEntrega < hoy ? "inicio-pedidos__atrasado" : undefined}>
+                {/* Toda la fila lleva al pedido en la pantalla Pedidos (D104). */}
+                <a href={`#pedidos/${p.id}`} className="inicio-pedidos__fila" title={`Ver el pedido N.º ${p.numero} en Pedidos`}>
                 <span className="inicio-pedidos__cuando">
                   {nombreDia(p.fechaEntrega, hoy)}
                   {p.horaEntrega ? ` ${p.horaEntrega}` : ""}
@@ -429,6 +431,7 @@ function ProximosPedidos({ pedidos: todos, hoy }: { pedidos: Pedido[]; hoy: stri
                   <span className="secundario">{p.lineas.map((l) => `${cantidad(l.cantidad)} × ${l.producto}`).join(", ")}</span>
                 </span>
                 <span className={`etiqueta ${claseEstado[p.estado]}`}>{nombreEstado[p.estado]}</span>
+                </a>
               </li>
             ))}
           </ul>

@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   MdAdd,
   MdDeleteOutline,
@@ -52,6 +52,34 @@ export function Pedidos() {
   // Un pedido de WhatsApp o un pago confirmado aparecen solos (D88): solo se recarga la pestaña que se ve (R5);
   // la otra se pone al día al abrirla.
   useAlAvisar(() => void (vista === "proximos" ? proximos.recargar() : historial.recargar()), "pedidos");
+
+  // Desde el Inicio se llega con «#pedidos/<id>» (D104): se baja hasta ese pedido y se resalta un momento.
+  const [resaltado, setResaltado] = useState<string | null>(null);
+  useEffect(() => {
+    const buscar = () => {
+      const id = decodeURIComponent(window.location.hash.split("/")[1] ?? "");
+      if (id) {
+        setVista("proximos");
+        setResaltado(id);
+      }
+    };
+    buscar();
+    window.addEventListener("hashchange", buscar);
+    return () => window.removeEventListener("hashchange", buscar);
+  }, []);
+  useEffect(() => {
+    if (resaltado === null || !proximos.datos) return;
+    // Al recargar la página ya no vuelve a saltar: el hash queda en «#pedidos».
+    history.replaceState(null, "", "#pedidos");
+    const tarjeta = document.getElementById(`pedido-${resaltado}`);
+    if (!tarjeta) {
+      setResaltado(null);
+      return;
+    }
+    tarjeta.scrollIntoView({ behavior: "smooth", block: "center" });
+    const fin = window.setTimeout(() => setResaltado(null), 2500);
+    return () => window.clearTimeout(fin);
+  }, [resaltado, proximos.datos]);
 
   const hoy = hoyISO();
   const lista = proximos.datos ?? [];
@@ -148,6 +176,7 @@ export function Pedidos() {
               atrasado={g.atrasado}
               porPagar={g.clave === "por-pagar"}
               pedidos={g.pedidos}
+              resaltado={resaltado}
               editar={(p) => setEditando(p)}
               alCambiar={async (m) => {
                 setMensaje(m);
@@ -184,6 +213,7 @@ function DiaDePedidos({
   atrasado,
   porPagar,
   pedidos,
+  resaltado,
   editar,
   alCambiar,
 }: {
@@ -192,6 +222,7 @@ function DiaDePedidos({
   atrasado: boolean;
   porPagar: boolean;
   pedidos: Pedido[];
+  resaltado: string | null;
   editar: (p: Pedido) => void;
   alCambiar: (m: Mensaje) => Promise<void>;
 }) {
@@ -227,6 +258,7 @@ function DiaDePedidos({
             key={p.id}
             pedido={p}
             atrasado={atrasado || (porPagar && esAtrasado(p))}
+            resaltado={resaltado === p.id}
             editar={() => editar(p)}
             alCambiar={alCambiar}
           />
@@ -239,11 +271,13 @@ function DiaDePedidos({
 function TarjetaPedido({
   pedido,
   atrasado,
+  resaltado,
   editar,
   alCambiar,
 }: {
   pedido: Pedido;
   atrasado: boolean;
+  resaltado: boolean;
   editar: () => void;
   alCambiar: (m: Mensaje) => Promise<void>;
 }) {
@@ -355,7 +389,10 @@ function TarjetaPedido({
   };
 
   return (
-    <article className={`pedido pedido--${pedido.estado.toLowerCase()} ${atrasado ? "pedido--atrasado" : ""}`}>
+    <article
+      id={`pedido-${pedido.id}`}
+      className={`pedido pedido--${pedido.estado.toLowerCase()} ${atrasado ? "pedido--atrasado" : ""} ${resaltado ? "pedido--resaltado" : ""}`}
+    >
       <header className="pedido__cabecera">
         <span className="pedido__numero">N.º {pedido.numero}</span>
         <span className="pedido__hora">

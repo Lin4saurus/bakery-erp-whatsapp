@@ -368,3 +368,18 @@ fieldset.pedido-form__productos {
   padding: 0;
   min-width: 0;
 }
+
+/* El pedido que se abrió desde el Inicio se ilumina un momento (D104). */
+.pedido--resaltado {
+  animation: pedido-resaltado 2.5s ease-out;
+}
+
+@keyframes pedido-resaltado {
+  0%,
+  40% {
+    box-shadow: 0 0 0 3px var(--color-primary);
+  }
+  100% {
+    box-shadow: var(--shadow-sm);
+  }
+}

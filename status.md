@@ -538,3 +538,7 @@ Decisión D44. Sin migración (el celular ya existía en `Cliente`).
 - [x] `POST /api/pedidos/pago-whatsapp` ya no paga solo: congruente → `por_confirmar` (atención «Pago por confirmar»); incongruente → `revision` (atención «Posible estafa»). Nuevas banderas: imagen que parece editada y nro. de operación repetido en otro chat en espera. 97/97 tests.
 - [x] Atención: etiqueta verde «Pago por confirmar» con «Llegó el pago», tarjeta roja «⚠ Posible estafa» con «Sí llegó, confirmar», y la línea «Dice el comprobante: monto · nro.». Probado en una copia: confirmar agenda el pedido y registra la venta; copia borrada.
 - [x] n8n publicado: Gemini devuelve `parece_editado` y `motivo_sospecha`; mensaje al cliente «¡Gracias por tu compra! 🍰» cuando el comprobante cuadra.
+
+## Pedidos del Inicio clicables (D104) — COMPLETADO
+
+- Cada fila de «Pedidos por entregar» del Inicio lleva al pedido en la pantalla Pedidos, que baja hasta él y lo resalta.

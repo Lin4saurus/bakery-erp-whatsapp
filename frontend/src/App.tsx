@@ -61,8 +61,9 @@ const menu: readonly ItemMenu<Pantalla>[] = [
 ];
 
 const esPantalla = (valor: string): valor is Pantalla => valor in pantallas;
+// «#pedidos/<id>» abre Pedidos con ese pedido a la vista (D104): la pantalla es lo que va antes de la barra.
 const desdeHash = (): Pantalla => {
-  const hash = window.location.hash.slice(1);
+  const hash = window.location.hash.slice(1).split("/")[0] ?? "";
   return esPantalla(hash) ? hash : "inicio";
 };
 
