@@ -1,0 +1,52 @@
+﻿﻿DULZURA PASTELERÍA · CÓMO INSTALAR EL ERP
+==========================================
+
+No hace falta internet ni instalar nada antes: el instalador trae todo.
+
+1. Abre "DulzuraERP_Instalador_....exe" con doble clic.
+   Si Windows avisa "Windows protegió su PC": "Más información" → "Ejecutar de todas formas".
+   Copia el ERP a C:\DulzuraERP y se instala solo (1 o 2 minutos).
+
+2. Crea tu PIN
+   El ERP se abre solo y te pide un PIN de 4 a 6 números. Ese PIN es tu clave:
+   no lo compartas.
+
+(Si el antivirus no deja abrir el .exe, usa el .zip: descomprímelo en el disco C
+para que quede C:\DulzuraERP y abre C:\DulzuraERP\instalacion\instalar.bat.)
+
+
+EL DÍA A DÍA
+------------
+
+- Para entrar: doble clic en el ícono "Dulzura ERP" del escritorio.
+- El ERP se prende solo al encender la portátil. Después de 1 hora sin usarlo,
+  o al encender la portátil, te pide de nuevo el PIN.
+- Para bloquearlo cuando te alejas: el candado de arriba a la derecha.
+- Para apagarlo del todo (casi nunca hace falta): C:\DulzuraERP\instalacion\detener.bat
+
+
+SI ALGO PASA
+------------
+
+- Olvidé el PIN: abre C:\DulzuraERP\instalacion\olvide-pin.bat
+  El ERP te pedirá crear uno nuevo. Tus datos no se tocan.
+- Copia en tu Gmail: abajo del menú toca "Mandar al correo..." y sigue los 3 pasos
+  (contraseña de aplicación de Google). Desde ahí cada respaldo llega a tu correo,
+  así tus datos están a salvo aunque la portátil se pierda.
+- El ERP no abre: mira el archivo C:\DulzuraERP\logs\erp.log
+- Respaldos: el ERP guarda una copia de los datos cada día en C:\DulzuraERP\backups
+  (los últimos 30). Para que se guarden en Google Drive, instala "Google Drive
+  para escritorio" y pon en el archivo C:\DulzuraERP\.env la línea
+      BACKUP_DIR="G:/Mi unidad/Dulzura/respaldos"
+- Cuando tengas el agente de WhatsApp: abre una ventana de comandos y escribe
+      C:\DulzuraERP\instalacion\whatsapp.bat encender
+  y recarga el ERP. Aparece el menú "Atención".
+
+
+ACTUALIZAR
+----------
+
+Cuando haya una versión nueva, el Inicio del ERP te avisa: "Hay una versión nueva del ERP".
+Toca "Actualizar ahora": baja la versión nueva, guarda un respaldo, se reinicia solo y te
+pide el PIN. Tus ventas, clientes y tu PIN se quedan. Necesita internet en ese momento.
+También puedes revisar a mano: abajo del menú, "Buscar actualización".

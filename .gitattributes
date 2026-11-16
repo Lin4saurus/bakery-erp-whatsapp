@@ -1,0 +1,6 @@
+*.bat text eol=crlf
+*.vbs text eol=crlf
+instalacion/*.ps1 text eol=crlf
+instalacion/*.txt text eol=crlf
+*.ico binary
+*.cmd text eol=crlf

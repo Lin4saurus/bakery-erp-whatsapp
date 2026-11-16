@@ -350,3 +350,43 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 - `services/reportes.ts`: `armarReporte(desde, hasta)` suma con `Prisma.Decimal` (sin anuladas ni demo; compra de insumos aparte) y `reporteEnExcel` arma el .xlsx con exceljs (las fechas van en hora local).
 - `GET /api/reportes?desde&hasta` (JSON) y `GET /api/reportes/excel?desde&hasta` (archivo). Pantalla `pantallas/Reportes.tsx`; el PDF es la impresión del navegador con `@media print`.
 - Dependencias nuevas: `exceljs` 4.4.0; `tsx` 4.23.15 (la 4.19.2 fallaba al cargar `generator-function`, dependencia lejana de exceljs). `npm audit`: exceljs trae `uuid` con un aviso moderado que no afecta cómo se usa aquí (solo escribe archivos).
+
+## Instalación en la portátil (D108)
+
+- Carpeta `instalacion/` (finales de línea CRLF por `.gitattributes`; los .bat y el .vbs sin tildes por la página de códigos de cmd/wscript).
+- `instalar.bat`: exige Node ≥ 20; apaga el ERP si estaba prendido; `.env` desde `.env.example` si falta; `npm ci`; `prisma generate`; `npm run backup` si ya hay `dulzura.db`; `prisma migrate deploy`; `web:build`; `crear-accesos.ps1`; abre el ERP.
+- `servidor.bat`: `PORT=3000`, `node node_modules/tsx/dist/cli.mjs backend/src/server.ts` con salida a `logs/erp.log` (pasa a `erp-anterior.log` sobre 5 MB). El puerto 3000 también está en `iniciar.vbs` y `detener.bat`.
+- `iniciar.vbs`: si `/api/salud` no responde, lanza `servidor.bat` oculto y espera hasta 90 s; abre `msedge --app=http://localhost:3000` (o el navegador por defecto). Con `/servidor` no abre ventana (acceso de Inicio de Windows).
+- `detener.bat`: `taskkill` del proceso que escucha en 127.0.0.1:3000.
+- `instalacion/armar-paquete.ts` (`npm run paquete`): copia `git ls-files --cached --others --exclude-standard` sin `.claude/`; con datos, `VACUUM INTO` de `dulzura.db`, borra «seguridad.pin», avisa de pedidos demo y revisa integridad; zip con `tar -a` en `../dulzura-entrega`.
+- Con datos, el paquete además borra los pedidos demo de la copia (corre `demo-pedidos.ts --borrar` con `DATABASE_URL` apuntando a la copia) y pone «agente.whatsapp» = `apagado` (D109).
+
+## WhatsApp encendido o apagado (D109)
+
+- `routes/agente.ts`: `whatsappEncendido()` / `guardarWhatsapp()`; `GET /api/agente/config` → `{ numerosPrueba, whatsapp }`. `backend/src/whatsapp.ts` = `npm run whatsapp [-- encender|apagar]`.
+- Frontend: `App` pide la configuración al entrar; mientras no sepa, o si está apagado, el menú no muestra «Atención» y no consulta `/atenciones`. `ModoPruebaAgente` (Inicio) no se muestra con WhatsApp apagado.
+
+## Instalador .exe (D110)
+
+- `armar-paquete.ts`: copia los archivos de git → `web:build` y copia `frontend/dist` → `npm ci --omit=dev` en la carpeta del paquete → `prisma generate` con un `.env` de ejemplo presente (si no, el cliente no anota `schemaEnvPath` y no encuentra `DATABASE_URL`; se revisa y se borra ese `.env`) → copia `process.execPath` a `node/node.exe` → base (VACUUM INTO + `demo-pedidos.ts --borrar` + `limpiar-copia.ts`, ambos con `DATABASE_URL` de la copia) → zip con `tar -a` → .exe con `iexpress /N /Q` (SED generado; el zip va entero porque IExpress no guarda carpetas). La carpeta de salida no puede tener espacios.
+- `instalar-exe.cmd` (adentro del .exe, corre con el cmd de 32 bits de IExpress: usa `Sysnative\tar.exe`): `detener.bat` si ya hay instalación, `tar -x` a `C:\` con `--exclude DulzuraERP/database/prisma/dulzura.db` si la base ya existe, luego `instalar.bat`.
+- `instalar.bat` usa solo `node\node.exe`: respaldo (`backend/src/backup.ts`) si hay base, `prisma migrate deploy`, accesos y abrir. `servidor.bat`, `olvide-pin.bat` y `whatsapp.bat` usan `node\node.exe` y, en una copia de desarrollo, el `node` de la PC.
+- Dependencias: en `dependencies` solo lo que corre el servidor (`@prisma/client`, `prisma`, `tsx`, `express`, `zod`, `exceljs`); React, iconos y fuentes están en `devDependencies` porque las pantallas van compiladas.
+
+## Respaldo por correo (D111)
+
+- `services/correoRespaldo.ts`: `configurarCorreo` (valida Gmail y 16 letras, `transporter.verify()` antes de guardar), `enviarRespaldo(respaldo)` (no lanza: devuelve `{ enviado }` o `{ enviado: false, error }` y anota «respaldo.ultimoEnvio» / «respaldo.errorEnvio»), `enviarSiCorresponde(ultimo, 20 h)`, `estadoCorreo`, `quitarCorreo`. Errores de Gmail traducidos (EAUTH → contraseña de aplicación; sin conexión → se reintenta).
+- Rutas: `GET /api/backups` suma `correo: { correo, ultimoEnvio, error }`; `POST /api/backups` suma `correo: null | { enviado, error? }`; `PUT /api/backups/correo` `{ correo, contrasena }` (prueba, guarda, crea un respaldo y lo manda); `DELETE /api/backups/correo`.
+- `backup.ts`: `prepararCopia` borra «respaldo.claveCorreo» de la copia temporal y hace `VACUUM` antes de la revisión de integridad y el gzip. Nombre del respaldo: sufijo = mayor existente del mismo segundo + 1.
+- `server.ts`: el respaldo automático corre al arrancar y cada hora (antes cada 24 h); después manda por correo si corresponde.
+- Frontend: `components/layout/EstadoRespaldo.tsx` (línea del correo en el pie) y `CorreoRespaldo.tsx` (ventana). Dependencia nueva: `nodemailer` 10.3.1 (trae sus tipos, sin dependencias).
+
+## Actualización desde GitHub (D112)
+
+- `services/actualizacion.ts`: `revisarActualizacion(forzar)` (Release `latest` de `Lin4saurus/bakery-erp-whatsapp` → asset `actualizacion.json`; caché 6 h), `instalarActualizacion()` (202; corre en segundo plano: `bajando` → `preparando` → `reiniciando` | `error`), `esInstalacion()` (`node/node.exe` y sin `.git`), `compararVersiones`. Descargas con `http`/`https` de Node siguiendo hasta 5 redirecciones (el `fetch` de Node podía tirar un error interno no atrapable). `DULZURA_ACTUALIZACIONES=<url>` cambia la fuente (pruebas).
+- Rutas: `GET /api/actualizacion[?revisar=1]`, `GET /api/actualizacion/estado`, `POST /api/actualizacion/instalar`. `GET /api/salud` → `{ ok, version }`.
+- `instalacion/aplicar-actualizacion.bat "<raíz>" "<nueva>" <pid>`: espera el proceso (PowerShell `WaitForExit`, 30 s y si no lo cierra), robocopy `/MIR` de backend, frontend, instalacion, node_modules y node (si vienen), `/E` de database sin `*.db*`, `/LEV:1` de la raíz sin `.env`; `prisma generate` y `migrate deploy` con `CHECKPOINT_DISABLE=1` (registro aparte en `logs/actualizacion-prisma.log`); `iniciar.vbs /servidor`; borra lo bajado.
+- `server.ts`: al cerrar corta todas las conexiones (`closeAllConnections`) y sale a los 5 s si algo se cuelga.
+- Frontend: `components/layout/Actualizacion.tsx` (`AvisoActualizacion` en el Inicio, `VersionErp` en el pie, ventana de avance). `App` recarga la página si el servidor vuelve con otra versión.
+- Armado: `armar-paquete.ts` exporta `prepararCarpeta` (con o sin dependencias y datos; escribe `dependencias.json` con la huella), `comprimir`, `sha256`, `huellaDependencias`. `publicar.ts` usa esas piezas. Nombres con la versión: `DulzuraERP_Instalador_<v>.exe`.
+- Publicar una versión: subir `version` en package.json → commit y push → `npm run publicar -- --notas "…"`.

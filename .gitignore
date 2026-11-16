@@ -7,3 +7,10 @@ frontend/dist/
 backups/
 # Ventas importadas con nombres de clientas reales: solo en la PC de la repostería
 database/prisma/datos/
+
+# Registro del servidor en la PC de la reposteria
+logs/
+
+# Actualizaciones bajadas en la portatil y la huella de dependencias del paquete (D112)
+actualizaciones/
+/dependencias.json

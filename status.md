@@ -558,3 +558,35 @@ Decisión D44. Sin migración (el celular ya existía en `Cliente`).
 ## Fuera Producto.disponible (D107) — COMPLETADO
 
 - [x] Migración `20261115190000_quitar_disponible`, API, frontend, seed de queques y test. 121/121 tests.
+
+## Instalación en la portátil de la repostera (D108) — EN CURSO
+
+- [x] `instalacion/`: instalar.bat, iniciar.vbs, servidor.bat, detener.bat, crear-accesos.ps1, ícono y LEEME.txt. `npm run paquete` arma el .zip.
+- [x] Probado en una carpeta limpia (con espacio en la ruta): npm ci, migrate deploy, build, servidor con `servidor.bat`, pide PIN nuevo y muestra los datos reales.
+- [ ] Sin probar en esta PC (crean accesos directos y apagan procesos): `instalar.bat` completo, `iniciar.vbs`, `detener.bat`. Se prueban en la portátil.
+- [x] Su copia sale limpia (D109): sin pedidos demo, con WhatsApp apagado (sin «Atención» ni aviso de modo prueba). Probado en carpeta limpia. 121/121 tests.
+- [ ] Instalar en la portátil y que la dueña cree su PIN.
+
+## Instalador .exe sin Node previo (D110) — COMPLETADO
+
+- [x] `npm run paquete` → `DulzuraERP_Instalador_<fecha>.exe` (143 MB) y .zip: trae Node.js, dependencias y pantallas compiladas; no pide internet ni instalar Node.
+- [x] Probado: contenido sacado del .exe a una carpeta de prueba, `instalar.bat` sin Node en el PATH (respaldo + migrate deploy), servidor con el `node.exe` del paquete, PIN nuevo, 59 clientes sin los de prueba, Excel 200.
+- [x] Arreglo: Prisma no anotaba la ruta del `.env` al generar sin `.env` → se genera con uno de ejemplo y se revisa.
+- [ ] En la portátil: doble clic al .exe, ícono del escritorio y arranque al encender (no se pueden probar en esta PC sin tocar C:\ y el escritorio).
+
+## Respaldo por correo (D111) — COMPLETADO
+
+- [x] Envío al Gmail del negocio con el respaldo adjunto: botón «Respaldar ahora» y automático diario (revisión cada hora, reintenta sin internet).
+- [x] Ventana «Respaldo por correo» en el pie del menú: pasos para la contraseña de aplicación, prueba con Gmail antes de guardar, primer envío al momento, «Dejar de mandar».
+- [x] La contraseña de aplicación no viaja en los respaldos. 2 tests nuevos (123/123). Probado en el navegador sobre una copia: Gmail rechaza datos falsos y el ERP lo explica sin guardar nada.
+- [x] Arreglo: nombre repetido de respaldos del mismo segundo.
+- [ ] La dueña crea la contraseña de aplicación en el Gmail del negocio y la escribe en su portátil (primer correo real sin probar: no tengo esas credenciales).
+
+## Actualización desde GitHub (D112) — COMPLETADO
+
+- [x] Versión 1.0.0 en package.json; `/api/salud` dice la versión.
+- [x] Servidor: busca la última Release, baja (http/https de Node, no fetch), revisa sha256, respalda, descomprime y lanza `aplicar-actualizacion.bat`; se cierra cortando las conexiones de avisos en vivo.
+- [x] Inicio: aviso con notas y «Actualizar ahora»; pie del menú: versión y «Buscar actualización»; ventana con el avance; recarga sola al volver.
+- [x] `npm run publicar` (y `--prueba` para armar sin subir). 2 tests nuevos (125/125).
+- [x] Probado de punta a punta con una instalación 1.0.0 en una carpeta de prueba y un servidor local en lugar de GitHub: 1.0.0 → 1.0.1 (liviano, 1 MB, ~14 s) y 1.0.1 → 1.0.2 (completo, 160 MB, ~58 s); el gasto cargado antes sigue ahí. Arreglados en la prueba: fetch de Node se caía con algunos servidores, el servidor no se cerraba por los avisos en vivo, `tasklist | find` se colgaba, `robocopy /LEV` sin número y el registro cortado por Prisma.
+- [ ] Primera Release real en GitHub (falta instalar `gh` o subirla por la web).

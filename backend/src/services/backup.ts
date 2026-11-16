@@ -93,9 +93,15 @@ export async function listarRespaldos(carpeta = carpetaRespaldos()): Promise<Res
   return respaldos.sort((a, b) => claveOrden(b.archivo).localeCompare(claveOrden(a.archivo)));
 }
 
-async function verificarIntegridad(rutaCopia: string): Promise<void> {
+// Lo que no viaja en los respaldos: la contraseña de aplicación de Gmail (D111). El respaldo se manda por correo y
+// puede terminar en una memoria USB; restaurarlo solo obliga a volver a escribir esa contraseña.
+const SECRETOS_FUERA_DEL_RESPALDO = ["respaldo.claveCorreo"];
+
+async function prepararCopia(rutaCopia: string): Promise<void> {
   const cliente = new PrismaClient({ datasourceUrl: `file:${rutaCopia}` });
   try {
+    await cliente.configuracion.deleteMany({ where: { clave: { in: SECRETOS_FUERA_DEL_RESPALDO } } });
+    await cliente.$executeRawUnsafe("VACUUM"); // que el texto borrado no quede en páginas libres del archivo
     const resultado = await cliente.$queryRawUnsafe<{ integrity_check: string }[]>("PRAGMA integrity_check");
     if (resultado[0]?.integrity_check !== "ok") {
       throw new AppError(500, `La copia de la base de datos no pasó la verificación: ${JSON.stringify(resultado)}`);
@@ -112,18 +118,23 @@ export async function crearRespaldo(db: Db): Promise<Respaldo & { eliminados: st
   const carpeta = carpetaRespaldos();
   await mkdir(carpeta, { recursive: true });
 
+  // Varios respaldos en el mismo segundo llevan -2, -3…: el nuevo toma el número siguiente al mayor que exista.
+  // (Antes buscaba el primer nombre libre: si la limpieza ya había borrado «…-24.db.gz» pero quedaba «…-24-3»,
+  // el nuevo volvía a llamarse «…-24», quedaba como el más viejo y se borraba en el acto.)
   const ahora = new Date();
-  let base = nombreParaFecha(ahora);
-  for (let n = 2; existsSync(path.join(carpeta, `${base}.db.gz`)); n++) {
-    base = `${nombreParaFecha(ahora)}-${n}`;
-  }
+  const prefijo = nombreParaFecha(ahora);
+  const numeros = (await readdir(carpeta))
+    .map((archivo) => PATRON.exec(archivo))
+    .filter((m): m is RegExpExecArray => m !== null && `dulzura_${m[1]}_${m[2]}` === prefijo)
+    .map((m) => Number(m[3] ?? 1));
+  const base = numeros.length === 0 ? prefijo : `${prefijo}-${Math.max(...numeros) + 1}`;
   const destino = path.join(carpeta, `${base}.db.gz`);
   const temporal = path.join(os.tmpdir(), `${base}-${process.pid}.db`);
 
   try {
     // VACUUM INTO hace una copia consistente aunque la app esté usando la base.
     await db.$executeRawUnsafe(`VACUUM INTO '${temporal.replace(/'/g, "''")}'`);
-    await verificarIntegridad(temporal);
+    await prepararCopia(temporal);
     await pipeline(createReadStream(temporal), createGzip({ level: 9 }), createWriteStream(destino));
   } catch (error) {
     await rm(destino, { force: true });

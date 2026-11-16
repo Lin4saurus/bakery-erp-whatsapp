@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   MdOutlineDashboard,
   MdOutlineSupportAgent,
@@ -13,6 +13,7 @@ import {
   MdOutlineSummarize,
 } from "react-icons/md";
 import { EstadoRespaldo } from "./components/layout/EstadoRespaldo";
+import { VersionErp } from "./components/layout/Actualizacion";
 import { Sidebar, type ItemMenu } from "./components/layout/Sidebar";
 import { Topbar } from "./components/layout/Topbar";
 import { Bloqueo, CambiarPin } from "./components/layout/Bloqueo";
@@ -82,7 +83,16 @@ export function App() {
   const [minutos, setMinutos] = useState(60);
   const { tema, alternar } = useTema();
 
+  // Versión del servidor con la que se cargó esta página (D112): si el ERP vuelve actualizado (las sesiones viven en
+  // memoria, así que pide el PIN), se recarga la página para no mezclar pantallas viejas con el servidor nuevo.
+  const versionCargada = useRef<string | null>(null);
   const revisar = useCallback(async () => {
+    const version = await api.versionServidor();
+    if (version && versionCargada.current && version !== versionCargada.current) {
+      window.location.reload();
+      return;
+    }
+    if (version) versionCargada.current = version;
     try {
       const sesion = await api.sesion();
       setMinutos(sesion.minutosInactividad);
@@ -141,12 +151,27 @@ function Escritorio({
   // También los chats que esperan a la dueña (D85).
   const [porAtender, setPorAtender] = useState(0);
   const [chatsEsperando, setChatsEsperando] = useState(0);
+  // Sin WhatsApp en este ERP (D109) no hay chats que atender: «Atención» no se muestra. Hasta saberlo, tampoco.
+  const [whatsapp, setWhatsapp] = useState(false);
+  useEffect(() => {
+    api
+      .configAgente()
+      .then((c) => setWhatsapp(c.whatsapp))
+      .catch(() => setWhatsapp(true));
+  }, []);
+  const conWhatsapp = useRef(whatsapp);
+  conWhatsapp.current = whatsapp;
+  useEffect(() => {
+    if (whatsapp) window.dispatchEvent(new Event("dulzura:avisos")); // cuenta los chats apenas se sabe
+    else setChatsEsperando(0);
+  }, [whatsapp]);
   useEffect(() => {
     const revisar = () => {
       api
         .pedidos("proximos")
         .then((lista) => setPorAtender(urgentes(lista).total))
         .catch(() => undefined);
+      if (!conWhatsapp.current) return;
       api
         .atenciones("PENDIENTE")
         .then((lista) => setChatsEsperando(new Set(lista.map((a) => a.celular.slice(-8))).size))
@@ -190,7 +215,7 @@ function Escritorio({
   return (
     <div className={`app ${colapsado ? "app--colapsado" : ""}`}>
       <Sidebar
-        items={menu}
+        items={whatsapp ? menu : menu.filter((m) => m.clave !== "atencion")}
         insignias={{ pedidos: porAtender, atencion: chatsEsperando }}
         actual={actual}
         abierto={menuAbierto}
@@ -200,7 +225,12 @@ function Escritorio({
           window.location.hash = clave;
         }}
         cerrar={() => setMenuAbierto(false)}
-        pie={<EstadoRespaldo compacto={colapsado} />}
+        pie={
+          <>
+            <EstadoRespaldo compacto={colapsado} />
+            {!colapsado && <VersionErp />}
+          </>
+        }
       />
       <div className="app__principal">
         <Topbar

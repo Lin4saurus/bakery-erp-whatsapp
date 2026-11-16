@@ -462,3 +462,25 @@
 - Reportes del periodo en pantalla, Excel y PDF (impresión del navegador).
 - Se quitó `Producto.disponible`. Respaldo previo a la migración. 121/121 tests; probado en el navegador sobre una copia de la base (borrada después).
 - Decisión: PIN sin usuario porque hay una sola persona; la sesión en memoria hace que reiniciar la PC pida el PIN sin guardar nada en disco.
+
+## 2026-11-16 — Instalador para la portátil de la repostera (D108)
+
+- Sin .exe: Node.js + `instalacion/instalar.bat` + ícono en el escritorio que abre el ERP en una ventana de Edge. El servidor se prende solo al encender la portátil.
+- `npm run paquete` arma el .zip con la base actual sin el PIN de esta PC; `--sin-datos` para actualizaciones. Solo el ERP: el agente de WhatsApp espera a que se contraten la API y la IA.
+- Su copia va limpia (D109): sin los 11 pedidos de demostración y con WhatsApp apagado (`npm run whatsapp -- encender` cuando contrate la API y la IA).
+
+## 2026-11-16 — Instalador .exe (D110)
+
+- La repostera no instala Node: el instalador .exe trae Node.js, las dependencias y las pantallas compiladas; doble clic, copia a C:\DulzuraERP e instala sin internet. El mismo .exe sirve para actualizar (no pisa la base).
+- La limpieza de su copia quedó en el paquete (`limpiar-copia.ts`): clientes con números de prueba del agente fuera, con sus pedidos, ventas y atenciones.
+- Arreglado antes de entregar: sin `.env` al generar, Prisma no encontraba la base en el paquete.
+
+## 2026-11-16 — Respaldo por correo (D111)
+
+- Cada respaldo llega al Gmail del negocio (botón y una vez al día), así hay copia fuera de la portátil sin depender de nada más que el ERP y una cuenta de Gmail.
+- Decisión: correo a sí mismo con SMTP y contraseña de aplicación (sin API de Google ni OAuth); la contraseña queda solo en la portátil y se saca de los respaldos.
+
+## 2026-11-16 — Botón «Actualizar» desde GitHub (D112)
+
+- La repostera ya no recibe instaladores nuevos: el Inicio le avisa que hay una versión nueva y se actualiza con un botón (respaldo antes, sus datos no se tocan). El instalador grande queda solo para la primera vez.
+- Decisión: GitHub Releases del repo público (el paquete no lleva datos) con un paquete liviano y uno completo; la portátil elige según la huella de dependencias.

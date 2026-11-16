@@ -118,7 +118,7 @@ export function Bloqueo({
             </Button>
             {modo === "entrar" && (
               <p className="secundario bloqueo__nota">
-                ¿Olvidaste tu PIN? En esta PC, en la carpeta del ERP, ejecuta <code>npm run pin</code> y elige uno nuevo.
+                ¿Olvidaste tu PIN? En esta PC abre <code>C:\DulzuraERP\instalacion\olvide-pin.bat</code> y elige uno nuevo.
               </p>
             )}
           </form>

@@ -31,10 +31,29 @@ export async function leerNumerosPrueba(): Promise<string[]> {
   }
 }
 
+// WhatsApp encendido o apagado en este ERP (D109). Apagado = la repostera aún no tiene el agente: se esconden
+// «Atención» y el aviso de modo prueba. Sin la fila cuenta como encendido. Se cambia con `npm run whatsapp`.
+const CLAVE_WHATSAPP = "agente.whatsapp";
+
+export async function whatsappEncendido(): Promise<boolean> {
+  const fila = await prisma.configuracion.findUnique({ where: { clave: CLAVE_WHATSAPP } });
+  return fila?.valor !== "apagado";
+}
+
+export async function guardarWhatsapp(encendido: boolean): Promise<void> {
+  const valor = encendido ? "encendido" : "apagado";
+  await prisma.configuracion.upsert({
+    where: { clave: CLAVE_WHATSAPP },
+    create: { clave: CLAVE_WHATSAPP, valor },
+    update: { valor },
+  });
+}
+
 export const agenteRouter = Router();
 
 agenteRouter.get("/config", async (_req, res) => {
-  res.json({ numerosPrueba: await leerNumerosPrueba() });
+  const [numerosPrueba, whatsapp] = await Promise.all([leerNumerosPrueba(), whatsappEncendido()]);
+  res.json({ numerosPrueba, whatsapp });
 });
 
 agenteRouter.put("/config", async (req, res) => {

@@ -19,6 +19,7 @@ import { bs, cantidad, diaLargo, hoyISO, hora, inicioDeMesISO, medida } from "..
 import { Aviso, Button, Cargando, Panel, useDatos } from "../ui";
 import { prepararAjuste, prepararCompra, prepararDia } from "../compraPendiente";
 import { tomarUltimaVenta } from "../ultimaVenta";
+import { AvisoActualizacion } from "../components/layout/Actualizacion";
 import "./Inicio.css";
 
 const MAX_ALERTAS = 3;
@@ -31,7 +32,8 @@ function ModoPruebaAgente() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const numeros = config.datos?.numerosPrueba ?? [];
-  if (numeros.length === 0) return null;
+  // Con WhatsApp apagado en este ERP (D109) no hay agente que esté en prueba.
+  if (numeros.length === 0 || config.datos?.whatsapp === false) return null;
   const quitar = async () => {
     setGuardando(true);
     setError(null);
@@ -188,6 +190,7 @@ export function Inicio() {
         </div>
       </div>
 
+      <AvisoActualizacion />
       <ModoPruebaAgente />
 
       {ultima && (

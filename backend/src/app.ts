@@ -15,6 +15,8 @@ import { agenteRouter } from "./routes/agente";
 import { configuracionRouter } from "./routes/configuracion";
 import { sesionRouter } from "./routes/sesion";
 import { reportesRouter } from "./routes/reportes";
+import { actualizacionRouter } from "./routes/actualizacion";
+import { versionInstalada } from "./services/actualizacion";
 import { exigirSesion } from "./services/sesion";
 import { errorHandler, notFoundHandler } from "./errors";
 
@@ -29,8 +31,10 @@ export function createApp({ exigirSesion: conSesion = true }: { exigirSesion?: b
   app.use(["/api/pedidos/pago-whatsapp", "/api/pedidos/:id/pago"], express.json({ limit: "15mb" }));
   app.use(express.json({ limit: "100kb" }));
 
+  // La versión sirve para saber que el ERP volvió a arrancar ya actualizado (D112).
+  const version = versionInstalada();
   app.get("/api/salud", (_req, res) => {
-    res.json({ ok: true });
+    res.json({ ok: true, version });
   });
   // PIN de la dueña (D105): sin sesión solo se puede entrar; el agente de WhatsApp usa su propia clave.
   app.use("/api/sesion", sesionRouter);
@@ -50,6 +54,7 @@ export function createApp({ exigirSesion: conSesion = true }: { exigirSesion?: b
   app.use("/api/agente", agenteRouter);
   app.use("/api/configuracion", configuracionRouter);
   app.use("/api/reportes", reportesRouter);
+  app.use("/api/actualizacion", actualizacionRouter);
 
   if (existsSync(FRONTEND_DIST)) {
     // index.html se revisa siempre, para que una versión nueva se vea al recargar;

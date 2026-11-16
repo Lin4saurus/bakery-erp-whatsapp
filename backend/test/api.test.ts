@@ -672,6 +672,34 @@ describe("Respaldos", () => {
     assert.equal(body.respaldos[0]?.archivo, tercero.body.archivo);
   });
 
+  test("respaldo por correo: sin configurar no manda nada y valida antes de llamar a Gmail (D111)", async () => {
+    const lista = await api<{ correo: { correo: string | null } }>("GET", "/backups");
+    assert.equal(lista.body.correo.correo, null);
+    const nuevo = await api<{ correo: unknown }>("POST", "/backups");
+    assert.equal(nuevo.status, 201);
+    assert.equal(nuevo.body.correo, null, "sin Gmail configurado no hay envío");
+    // Estas dos se rechazan sin conectarse a Gmail.
+    assert.equal((await api("PUT", "/backups/correo", { correo: "dulzura@hotmail.com", contrasena: "abcdefghijklmnop" })).status, 400);
+    assert.equal((await api("PUT", "/backups/correo", { correo: "dulzura@gmail.com", contrasena: "abcd efgh" })).status, 400);
+    assert.equal((await api("DELETE", "/backups/correo")).status, 204);
+  });
+
+  test("la contraseña de aplicación de Gmail no viaja en el respaldo (D111)", async () => {
+    const { prisma } = await import("../src/prisma");
+    const secreto = "clavesecretadeprueba";
+    // Solo la contraseña (sin correo): así el respaldo no intenta mandar nada por internet.
+    await prisma.configuracion.create({ data: { clave: "respaldo.claveCorreo", valor: secreto } });
+    try {
+      const { body } = await api<RespaldoApi>("POST", "/backups");
+      const contenido = gunzipSync(readFileSync(path.join(CARPETA_RESPALDOS, body.archivo)));
+      assert.ok(contenido.includes(Buffer.from("Queque con relleno")), "el respaldo trae los datos");
+      assert.ok(!contenido.includes(Buffer.from(secreto)), "pero no la contraseña");
+      assert.ok(await prisma.configuracion.findUnique({ where: { clave: "respaldo.claveCorreo" } }), "la base de verdad la conserva");
+    } finally {
+      await prisma.configuracion.deleteMany({ where: { clave: "respaldo.claveCorreo" } });
+    }
+  });
+
   test("resuelve la ruta de la base igual que Prisma", async () => {
     const { rutaBaseDeDatos } = await import("../src/services/backup");
     assert.equal(rutaBaseDeDatos("file:./dulzura.db"), path.resolve(__dirname, "../../database/prisma/dulzura.db"));
@@ -1930,6 +1958,14 @@ describe("Pedidos por entregar (D81)", () => {
       [],
     );
 
+    // WhatsApp encendido por defecto; apagado en la portátil de la repostera hasta que tenga el agente (D109).
+    const { guardarWhatsapp } = await import("../src/routes/agente");
+    assert.equal((await api<{ whatsapp: boolean }>("GET", "/agente/config")).body.whatsapp, true);
+    await guardarWhatsapp(false);
+    assert.equal((await api<{ whatsapp: boolean }>("GET", "/agente/config")).body.whatsapp, false);
+    await guardarWhatsapp(true);
+    assert.equal((await api<{ whatsapp: boolean }>("GET", "/agente/config")).body.whatsapp, true);
+
     await nuevoPedido({ clienteNombre: "Cliente Celular D101", celular: "70001103" });
     const hallado = await api<{ cliente: { nombre: string; precios: unknown[] } | null }>(
       "GET",
@@ -2797,6 +2833,28 @@ describe("Reporte del periodo", () => {
     assert.match(res.headers.get("content-disposition") ?? "", /dulzura_reporte_2026-11-01_al_2026-11-30\.xlsx/);
     const bytes = Buffer.from(await res.arrayBuffer());
     assert.equal(bytes.subarray(0, 2).toString(), "PK", "un .xlsx es un zip");
+  });
+});
+
+// ---------- Actualización desde GitHub (D112) ----------
+
+describe("Actualización", () => {
+  test("compara versiones por número, no como texto", async () => {
+    const { compararVersiones } = await import("../src/services/actualizacion");
+    assert.ok(compararVersiones("1.0.10", "1.0.9") > 0);
+    assert.ok(compararVersiones("1.1.0", "1.0.99") > 0);
+    assert.equal(compararVersiones("1.0.0", "1.0.0"), 0);
+    assert.ok(compararVersiones("0.9.9", "1.0.0") < 0);
+  });
+
+  test("en la copia de desarrollo no busca ni instala nada, y /salud dice la versión", async () => {
+    const salud = await api<{ ok: boolean; version: string }>("GET", "/salud");
+    assert.match(salud.body.version, /^\d+\.\d+\.\d+$/);
+    const estado = await api<{ puede: boolean; version: string; disponible: unknown }>("GET", "/actualizacion?revisar=1");
+    assert.equal(estado.body.puede, false, "un repositorio de git no se actualiza solo");
+    assert.equal(estado.body.version, salud.body.version);
+    assert.equal(estado.body.disponible, null);
+    assert.equal((await api("POST", "/actualizacion/instalar")).status, 409);
   });
 });
 

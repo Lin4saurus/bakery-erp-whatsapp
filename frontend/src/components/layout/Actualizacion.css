@@ -1,0 +1,73 @@
+/* Actualización desde GitHub (D112). */
+.actualizacion {
+  display: grid;
+  gap: var(--space-2, 16px);
+}
+
+.actualizacion p {
+  margin: 0;
+}
+
+.actualizacion__barra {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+
+.actualizacion__relleno {
+  height: 100%;
+  background: var(--color-primary);
+}
+
+.actualizacion__relleno--ocupado {
+  opacity: 0.55;
+}
+
+.actualizacion__aviso {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1, 8px);
+  width: 100%;
+}
+
+.actualizacion__aviso .boton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.version-erp {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: var(--space-1, 8px);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.version-erp__enlace {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--color-text-secondary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.version-erp__enlace:hover:not(:disabled) {
+  color: var(--color-text);
+}
+
+.version-erp__nueva {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.version-erp__mensaje {
+  width: 100%;
+}

@@ -176,9 +176,35 @@ export interface Respaldo {
   bytes: number;
 }
 
+// Respaldo por correo (D111): el Gmail del negocio y cómo fue el último envío.
+export interface EstadoCorreo {
+  correo: string | null;
+  ultimoEnvio: string | null;
+  error: string | null;
+}
+
+export type ResultadoEnvio = { enviado: true } | { enviado: false; error: string } | null;
+
+// Actualización desde GitHub (D112).
+export interface EstadoActualizacion {
+  version: string;
+  puede: boolean; // solo en una instalación hecha con el instalador
+  disponible: { version: string; notas: string; publicada: string; completo: boolean; bytes: number } | null;
+  revisado: string | null;
+  error: string | null;
+  proceso: {
+    estado: "bajando" | "preparando" | "reiniciando" | "error";
+    version: string;
+    bajado: number;
+    total: number;
+    error?: string;
+  } | null;
+}
+
 export interface ListaRespaldos {
   carpeta: string;
   respaldos: Respaldo[];
+  correo: EstadoCorreo;
 }
 
 // Ventas de 2024 importadas del Excel (solo consulta). Costo y utilidad son los del Excel.
@@ -615,7 +641,7 @@ export const api = {
   gastosFijos: () => pedir<{ gastosFijos: string }>("GET", "/configuracion/gastos-fijos"),
   guardarGastosFijos: (gastosFijos: string) =>
     pedir<{ gastosFijos: string }>("PUT", "/configuracion/gastos-fijos", { gastosFijos }),
-  configAgente: () => pedir<{ numerosPrueba: string[] }>("GET", "/agente/config"),
+  configAgente: () => pedir<{ numerosPrueba: string[]; whatsapp: boolean }>("GET", "/agente/config"),
   guardarConfigAgente: (numerosPrueba: string[]) =>
     pedir<{ numerosPrueba: string[] }>("PUT", "/agente/config", { numerosPrueba }),
   adjuntoAtencion: (id: string) => pedir<{ adjunto: string }>("GET", `/atenciones/${id}/adjunto`),
@@ -658,5 +684,20 @@ export const api = {
   ventasTodas: () => pedir<ListaVentas>("GET", "/ventas"),
 
   respaldos: () => pedir<ListaRespaldos>("GET", "/backups"),
-  respaldar: () => pedir<Respaldo & { eliminados: string[] }>("POST", "/backups"),
+  respaldar: () => pedir<Respaldo & { eliminados: string[]; correo: ResultadoEnvio }>("POST", "/backups"),
+  configurarCorreo: (correo: string, contrasena: string) =>
+    pedir<EstadoCorreo & { envio: ResultadoEnvio }>("PUT", "/backups/correo", { correo, contrasena }),
+  quitarCorreo: () => pedir<void>("DELETE", "/backups/correo"),
+  actualizacion: (revisar = false) => pedir<EstadoActualizacion>("GET", `/actualizacion${revisar ? "?revisar=1" : ""}`),
+  avanceActualizacion: () => pedir<EstadoActualizacion>("GET", "/actualizacion/estado"),
+  instalarActualizacion: () => pedir<EstadoActualizacion>("POST", "/actualizacion/instalar"),
+  // Sin sesión y sin el aviso de «bloqueado»: sirve para esperar a que el ERP vuelva después de actualizarse.
+  versionServidor: async (): Promise<string | null> => {
+    try {
+      const r = await fetch("/api/salud", { cache: "no-store" });
+      return r.ok ? ((await r.json()) as { version?: string }).version ?? null : null;
+    } catch {
+      return null;
+    }
+  },
 };
