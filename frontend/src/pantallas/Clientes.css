@@ -70,10 +70,31 @@
   margin-top: var(--space-2);
 }
 
+/* Lista, precio y botón en una fila; la ayuda «Precio de venta» debajo del precio. */
+.clientes__precio > button {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: end;
+  min-height: 41px; /* igual que la lista y la caja del precio */
+}
+
+.clientes__precio-ayuda {
+  grid-column: 2;
+  grid-row: 2;
+  margin-top: -4px;
+}
+
 @media (max-width: 768px) {
   .clientes__campos,
   .clientes__precio {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .clientes__precio > button,
+  .clientes__precio-ayuda {
+    min-height: 0;
+    grid-column: auto;
+    grid-row: auto;
   }
 }
 

@@ -335,3 +335,18 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 - `pago-whatsapp` → `resultado: "por_confirmar" | "incompleto" | "rechazado" | "revision"`, más `faltante`, `monto`, `saldo` y `motivosCliente` (motivos en palabras del cliente).
 - Rechazo: fecha ≠ hoy (America/La_Paz) o sin fecha, destinatario ≠ titular del QR, `estadoPago` pendiente/en proceso/rechazado/fallido, `pareceEditado`, nro. de operación ya usado o en espera en otro chat, tercer pago parcial. Revisión (no rechaza): sin cotización, ilegible, pagó de más, delivery sin aceptar.
 - Saldo = total − `montoReportado` de las tarjetas pendientes de esa cotización; solo los válidos guardan `montoReportado` (cero confianza). `saldoPendiente` > 0 en un `VERIFICAR_PAGO` = pago parcial.
+
+## PIN de la dueña (D105)
+
+- `services/sesion.ts`: PIN con `scrypt` (sal de 16 bytes) en `Configuracion` «seguridad.pin»; sesiones en un `Map` en memoria (token aleatorio de 32 bytes) con vencimiento por inactividad de 60 min; intentos fallidos (5 → 60 s).
+- `routes/sesion.ts` (sin sesión): `GET /api/sesion` → `{ pinCreado, activa, minutosInactividad }`; `POST /pin` (solo si no hay PIN), `POST /entrar`, `POST /salir`, `POST /actividad`, `PUT /pin` (`{ actual, nuevo }`, con sesión).
+- `exigirSesion` se monta en `/api` después de `/api/salud` y `/api/sesion`. Sin sesión → 401 `{ sesion: "bloqueado" }`; el frontend lo escucha (`EVENTO_BLOQUEADO`) y muestra el PIN. `createApp({ exigirSesion: false })` solo en las pruebas de la API que no son de la sesión.
+- Agente: cabecera `X-Clave-Agente` = «seguridad.claveAgente» (se crea sola). Rutas permitidas en `RUTAS_DEL_AGENTE`; si n8n necesita una ruta nueva, hay que agregarla ahí.
+- Frontend: `App` es la puerta (no monta pantallas ni avisos en vivo sin sesión); `hooks/useInactividad.ts`; `components/layout/Bloqueo.tsx` (crear/entrar y `CambiarPin`).
+- `npm run pin` (`backend/src/pin.ts`) borra el PIN.
+
+## Reportes (D106)
+
+- `services/reportes.ts`: `armarReporte(desde, hasta)` suma con `Prisma.Decimal` (sin anuladas ni demo; compra de insumos aparte) y `reporteEnExcel` arma el .xlsx con exceljs (las fechas van en hora local).
+- `GET /api/reportes?desde&hasta` (JSON) y `GET /api/reportes/excel?desde&hasta` (archivo). Pantalla `pantallas/Reportes.tsx`; el PDF es la impresión del navegador con `@media print`.
+- Dependencias nuevas: `exceljs` 4.4.0; `tsx` 4.23.15 (la 4.19.2 fallaba al cargar `generator-function`, dependencia lejana de exceljs). `npm audit`: exceljs trae `uuid` con un aviso moderado que no afecta cómo se usa aquí (solo escribe archivos).

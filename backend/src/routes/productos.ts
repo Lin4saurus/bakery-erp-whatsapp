@@ -16,7 +16,6 @@ const productoSchema = z.object({
   precioVenta: decimalNoNegativo.nullable().optional(),
   unidadesPorVenta: decimalPositivo.optional(), // unidades de la receta en lo que se vende: 4 en un pack de 4 (D60)
   activo: z.boolean().optional(),
-  disponible: z.boolean().optional(),
 });
 
 const actualizarSchema = productoSchema.partial().refine(alMenosUnCampo, "Envía al menos un campo para actualizar.");
@@ -38,10 +37,6 @@ const cantidadSchema = z.object({ cantidad: decimalPositivo });
 const filtrosSchema = z.object({
   tipo: z.nativeEnum(TipoProducto).optional(),
   activo: z
-    .enum(["true", "false"])
-    .transform((valor) => valor === "true")
-    .optional(),
-  disponible: z
     .enum(["true", "false"])
     .transform((valor) => valor === "true")
     .optional(),
@@ -73,10 +68,10 @@ export const productosRouter = Router();
 // ---------- CRUD ----------
 
 productosRouter.get("/", async (req, res) => {
-  const { tipo, activo, disponible } = filtrosSchema.parse(req.query);
+  const { tipo, activo } = filtrosSchema.parse(req.query);
   // Las recetas borradas que tenían ventas (D63) no se listan en ningún lado.
   const productos = await prisma.producto.findMany({
-    where: { tipo, activo, disponible, eliminado: false },
+    where: { tipo, activo, eliminado: false },
     orderBy: { nombre: "asc" },
   });
   // Todas las recetas en una consulta y cada costo una vez por petición (R2).

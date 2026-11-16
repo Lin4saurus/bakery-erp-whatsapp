@@ -477,7 +477,7 @@ Esfuerzo estimado: Pequeño (<1h)
 # Estado
 - **Sprint 1 (D99):** hechos S1, U1, S4 y S2 en el ERP. B2 resuelto con D100 (la demo se queda para la defensa y no suma). S2 en Docker hecho: n8n, Evolution y Postgres solo en 127.0.0.1. **Sprint 1 completo.**
 - **Sprint 2 (D101):** hechos N1, N2, N3 y N4. **Sprint 2 completo.**
-- **Sprint 4 (D103):** hechos M3, M5, U3, M2 (parcial: opciones con nombre, sin mover de archivo), M4, D1, D3, U2, U4, S5 y M6 (falta quitar `Producto.disponible`). **Las 4 etapas están completas.** Quedan fuera del plan, a propósito: D2 (Prisma 7, antes del .exe) y B3 (archivos fuera de la base).
+- **Sprint 4 (D103):** hechos M3, M5, U3, M2 (parcial: opciones con nombre, sin mover de archivo), M4, D1, D3, U2, U4, S5 y M6 (`Producto.disponible` se quitó después, en D107). **Las 4 etapas están completas.** Quedan fuera del plan, a propósito: D2 (Prisma 7, antes del .exe) y B3 (archivos fuera de la base).
 - **Sprint 3 (D102):** hechos R1, R2, R4, R5, B1, S3 y M1. **Sprint 3 completo.** De paso: el ERP escucha también en `::1`, porque por «localhost» perdía ~200 ms por pedido desde S2.
 
 # TOP 10 — cambios a hacer ya

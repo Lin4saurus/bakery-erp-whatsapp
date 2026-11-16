@@ -66,7 +66,7 @@ const netoPorInsumo = (movimientos: { insumoId: number; cantidad: Prisma.Decimal
   return neto;
 };
 
-const rangoFechas = (desde?: string, hasta?: string): Prisma.DateTimeFilter => {
+export const rangoFechas = (desde?: string, hasta?: string): Prisma.DateTimeFilter => {
   const fecha: Prisma.DateTimeFilter = {};
   if (desde) fecha.gte = new Date(`${desde}T00:00:00`);
   if (hasta) fecha.lte = new Date(`${hasta}T23:59:59.999`);
@@ -346,7 +346,7 @@ export async function registrarPedidoVenta(
 
 // Las ventas de los pedidos de demostración (npm run demo:pedidos) se guardan para mostrar el flujo en la defensa,
 // pero no son plata real: no salen en las listas ni suman en la caja, el Desempeño ni los clientes (B2, D100).
-async function sinVentasDemo(): Promise<Prisma.VentaWhereInput> {
+export async function sinVentasDemo(): Promise<Prisma.VentaWhereInput> {
   const demos = await prisma.pedido.findMany({
     where: { esDemo: true, ventaPedidoId: { not: null } },
     select: { ventaPedidoId: true },

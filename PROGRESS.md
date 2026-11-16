@@ -455,3 +455,10 @@
 ## 2026-11-14 — Pedidos del Inicio clicables (D104)
 
 - Filas del Inicio como enlaces `#pedidos/<id>`; Pedidos baja hasta la tarjeta y la ilumina. App.tsx lee la pantalla antes de la barra del hash.
+
+## 2026-11-15 — PIN, reportes y fuera `Producto.disponible` (D105–D107)
+
+- PIN de 4 a 6 números para la dueña: bloqueo al encender, tras 1 hora sin uso y con el candado; toda la API pide sesión y el agente de WhatsApp usa su propia clave limitada a sus rutas (n8n actualizado y publicado).
+- Reportes del periodo en pantalla, Excel y PDF (impresión del navegador).
+- Se quitó `Producto.disponible`. Respaldo previo a la migración. 121/121 tests; probado en el navegador sobre una copia de la base (borrada después).
+- Decisión: PIN sin usuario porque hay una sola persona; la sesión en memoria hace que reiniciar la PC pida el PIN sin guardar nada en disco.

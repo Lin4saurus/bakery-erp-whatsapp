@@ -542,3 +542,19 @@ Decisión D44. Sin migración (el celular ya existía en `Cliente`).
 ## Pedidos del Inicio clicables (D104) — COMPLETADO
 
 - Cada fila de «Pedidos por entregar» del Inicio lleva al pedido en la pantalla Pedidos, que baja hasta él y lo resalta.
+
+## PIN de la dueña (D105) — COMPLETADO
+
+- [x] PIN de 4 a 6 números (scrypt + sal), sesión en memoria con cookie HttpOnly; bloqueo tras 1 hora sin uso, al reiniciar y con el candado. «Cambiar PIN» en la barra superior. 5 fallos → 1 minuto de espera.
+- [x] Toda la API pide sesión; el agente de n8n entra con `X-Clave-Agente` solo a sus 8 rutas. Workflow publicado con la cabecera en sus 10 llamadas al ERP; probado desde el contenedor de n8n (200 con clave, 401 sin clave).
+- [x] `npm run pin` borra el PIN olvidado. 6 tests nuevos.
+- [ ] La dueña crea su PIN la primera vez que abre el ERP.
+
+## Reportes para el contador (D106) — COMPLETADO
+
+- [x] Pantalla Reportes: resumen, ganancia por producto, ventas por día y gastos de un periodo. Excel (5 hojas, exceljs 4.4.0) e «Imprimir o PDF». 2 tests nuevos.
+- [x] `tsx` subió a 4.23.15: la 4.19.2 no podía cargar una dependencia de exceljs (`generator-function`).
+
+## Fuera Producto.disponible (D107) — COMPLETADO
+
+- [x] Migración `20261115190000_quitar_disponible`, API, frontend, seed de queques y test. 121/121 tests.

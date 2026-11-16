@@ -27,7 +27,6 @@ export interface Producto {
   unidadRendimiento: UnidadMedida;
   precioVenta: string | null;
   activo: boolean; // sigue en el catálogo
-  disponible: boolean; // sin uso desde D49: todo producto activo se vende
   unidadesPorVenta: string; // 4 en un pack de 4 brownies; 1 en lo demás (D60)
   costoTanda: string; // ingredientes de la tanda, sin empaques
   costoEmpaque: string; // empaques por lo que se vende
@@ -388,6 +387,38 @@ export class ApiError extends Error {
 interface CuerpoError {
   error?: string;
   detalles?: { campo: string; mensaje: string }[];
+  sesion?: string;
+}
+
+// Cualquier pedido que llega con el ERP bloqueado (sesión vencida o cerrada) avisa a App, que muestra el PIN (D105).
+export const EVENTO_BLOQUEADO = "dulzura:bloqueado";
+
+// Reporte para el contador (D106). Montos en texto (Decimal), como el resto de la API.
+export interface Reporte {
+  desde: string;
+  hasta: string;
+  resumen: {
+    lineasVendidas: number;
+    pedidos: number;
+    ventas: string;
+    costoProduccion: string;
+    gananciaBruta: string;
+    gastosOperativos: string;
+    compraInsumos: string;
+    utilidad: string;
+    anuladas: number;
+    totalAnulado: string;
+  };
+  porProducto: { producto: string; categoria: string; cantidad: string; total: string; costo: string; ganancia: string }[];
+  porDia: { dia: string; ventas: string; ganancia: string }[];
+  gastos: { fecha: string; categoria: string; descripcion: string; monto: string }[];
+  gastosPorCategoria: { categoria: string; monto: string }[];
+}
+
+export interface EstadoSesion {
+  pinCreado: boolean;
+  activa: boolean;
+  minutosInactividad: number;
 }
 
 async function pedir<T>(metodo: string, ruta: string, cuerpo?: unknown): Promise<T> {
@@ -405,6 +436,7 @@ async function pedir<T>(metodo: string, ruta: string, cuerpo?: unknown): Promise
   const datos: unknown = await respuesta.json().catch(() => null);
   if (!respuesta.ok) {
     const error = (datos ?? {}) as CuerpoError;
+    if (respuesta.status === 401 && error.sesion === "bloqueado") window.dispatchEvent(new Event(EVENTO_BLOQUEADO));
     throw new ApiError(error.error ?? `Error ${respuesta.status}`, respuesta.status, error.detalles ?? []);
   }
   return datos as T;
@@ -468,6 +500,28 @@ export const mensajeDeError = (error: unknown): string => {
 };
 
 export const api = {
+  // ---------- PIN de la dueña (D105) ----------
+  sesion: () => pedir<EstadoSesion>("GET", "/sesion"),
+  crearPin: (pin: string) => pedir<{ activa: boolean }>("POST", "/sesion/pin", { pin }),
+  entrar: (pin: string) => pedir<{ activa: boolean }>("POST", "/sesion/entrar", { pin }),
+  salir: () => pedir<void>("POST", "/sesion/salir"),
+  anotarActividad: () => pedir<void>("POST", "/sesion/actividad"),
+  cambiarPin: (actual: string, nuevo: string) => pedir<{ ok: boolean }>("PUT", "/sesion/pin", { actual, nuevo }),
+
+  // ---------- Reportes (D106) ----------
+  reporte: (desde: string, hasta: string) =>
+    pedir<Reporte>("GET", `/reportes?${new URLSearchParams({ desde, hasta }).toString()}`),
+  reporteExcel: async (desde: string, hasta: string): Promise<Blob> => {
+    const respuesta = await fetch(`/api/reportes/excel?${new URLSearchParams({ desde, hasta }).toString()}`).catch(() => {
+      throw new ApiError("No se pudo conectar con el servidor. ¿Está encendida la API?", 0);
+    });
+    if (!respuesta.ok) {
+      const error = ((await respuesta.json().catch(() => null)) ?? {}) as CuerpoError;
+      if (respuesta.status === 401 && error.sesion === "bloqueado") window.dispatchEvent(new Event(EVENTO_BLOQUEADO));
+      throw new ApiError(error.error ?? `Error ${respuesta.status}`, respuesta.status, error.detalles ?? []);
+    }
+    return respuesta.blob();
+  },
   insumos: () => pedir<Insumo[]>("GET", "/insumos"),
   crearInsumo: (datos: DatosInsumo) => pedir<Insumo>("POST", "/insumos", datos),
   actualizarInsumo: (id: number, datos: Partial<DatosInsumo>) => pedir<Insumo>("PATCH", `/insumos/${id}`, datos),
@@ -475,11 +529,10 @@ export const api = {
     pedir<{ insumo: Insumo; alerta: AlertaStock | null }>("POST", `/insumos/${id}/movimientos`, movimiento),
   alertas: () => pedir<AlertaStock[]>("GET", "/insumos/alertas"),
 
-  productos: (filtro: { tipo?: TipoProducto; activo?: boolean; disponible?: boolean } = {}) => {
+  productos: (filtro: { tipo?: TipoProducto; activo?: boolean } = {}) => {
     const params = new URLSearchParams();
     if (filtro.tipo) params.set("tipo", filtro.tipo);
     if (filtro.activo !== undefined) params.set("activo", String(filtro.activo));
-    if (filtro.disponible !== undefined) params.set("disponible", String(filtro.disponible));
     const query = params.toString();
     return pedir<Producto[]>("GET", `/productos${query ? `?${query}` : ""}`);
   },

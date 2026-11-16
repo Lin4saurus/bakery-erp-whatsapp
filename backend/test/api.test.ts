@@ -143,7 +143,7 @@ before(async () => {
   const { prisma } = await import("../src/prisma");
   ({ costosEsperados } = await import("../../database/prisma/check-seed"));
   desconectar = () => prisma.$disconnect();
-  server = createApp().listen(0);
+  server = createApp({ exigirSesion: false }).listen(0); // la sesión con PIN se prueba aparte (D105)
   await once(server, "listening");
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
 });
@@ -1035,23 +1035,16 @@ describe("Gastos operativos", () => {
   });
 });
 
-// ---------- Disponibilidad (D49: ya no limita la venta) ----------
+// ---------- Productos a la venta (D49; `disponible` se quitó en D107) ----------
 
 describe("Productos a la venta", () => {
-  test("el campo disponible se guarda y filtra, pero no impide vender un producto activo", async () => {
+  test("todo producto activo se lista y se vende; ya no existe el campo disponible", async () => {
     const banadas = await productoPorNombre("Frutillas bañadas en chocolate");
-    const quitar = await api<Producto & { disponible: boolean }>("PATCH", `/productos/${banadas.id}`, { disponible: false });
-    assert.equal(quitar.status, 200);
-    assert.equal(quitar.body.disponible, false);
-
-    const nombres = async (filtro: string) =>
-      (await api<Producto[]>("GET", `/productos?tipo=VENTA&activo=true&${filtro}`)).body.map((p) => p.nombre);
-    assert.ok(!(await nombres("disponible=true")).includes(banadas.nombre));
-    assert.ok((await nombres("disponible=false")).includes(banadas.nombre));
-    assert.equal((await api("GET", "/productos?disponible=talvez")).status, 400);
-
+    const lista = await api<Producto[]>("GET", "/productos?tipo=VENTA&activo=true");
+    const enLista = lista.body.find((p) => p.id === banadas.id);
+    assert.ok(enLista);
+    assert.equal("disponible" in enLista, false);
     assert.equal((await api("POST", "/ventas", { productoId: banadas.id, cantidad: 1 })).status, 201);
-    await api("PATCH", `/productos/${banadas.id}`, { disponible: true });
   });
 });
 
@@ -2759,5 +2752,145 @@ describe("Sprint 4 de la auditoría: costeo = inventario, respaldos, nombres y c
     });
     assert.equal(r.status, 400);
     assert.ok(r.body.detalles.every((d) => !/se esperaba/.test(d.mensaje)));
+  });
+});
+
+// ---------- Reporte para el contador (D106) ----------
+
+describe("Reporte del periodo", () => {
+  interface ReporteApi {
+    resumen: Record<string, string | number>;
+    porProducto: { producto: string; cantidad: string; total: string; ganancia: string }[];
+    gastos: { categoria: string; monto: string }[];
+  }
+
+  test("suma ventas, ganancia por producto y gastos; la compra de insumos no baja la utilidad", async () => {
+    const hoy = new Date().toLocaleDateString("sv-SE");
+    const antes = (await api<ReporteApi>("GET", `/reportes?desde=${hoy}&hasta=${hoy}`)).body;
+    const tres = await productoPorNombre("Tres leches");
+    const { status: creada, body: nueva } = await api<VentaCreada>("POST", "/ventas", { productoId: tres.id, cantidad: 2 });
+    assert.equal(creada, 201);
+    assert.equal(
+      (await api("POST", "/gastos", { categoria: "LIMPIEZA", descripcion: "Esponjas reporte", monto: "7.50" })).status,
+      201,
+    );
+
+    const { status, body } = await api<ReporteApi>("GET", `/reportes?desde=${hoy}&hasta=${hoy}`);
+    assert.equal(status, 200);
+    const sube = (campo: string, cuanto: string | Prisma.Decimal) =>
+      assert.ok(cerca(String(body.resumen[campo]), D(String(antes.resumen[campo])).add(cuanto)), campo);
+    sube("ventas", nueva.venta.totalVenta);
+    sube("gananciaBruta", nueva.venta.gananciaBruta);
+    sube("gastosOperativos", "7.5");
+    sube("utilidad", D(nueva.venta.gananciaBruta).sub("7.5"));
+    const fila = body.porProducto.find((p) => p.producto === "Tres leches");
+    assert.ok(fila && D(fila.cantidad).gte(2));
+    assert.ok(body.gastos.some((g) => g.categoria === "Limpieza" && cerca(g.monto, "7.5")));
+  });
+
+  test("valida el periodo y descarga el Excel", async () => {
+    assert.equal((await api("GET", "/reportes?desde=2026-11-30&hasta=2026-11-01")).status, 400);
+    assert.equal((await api("GET", "/reportes?desde=noviembre")).status, 400);
+    const res = await fetch(`${base}/reportes/excel?desde=2026-11-01&hasta=2026-11-30`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type") ?? "", /spreadsheetml/);
+    assert.match(res.headers.get("content-disposition") ?? "", /dulzura_reporte_2026-11-01_al_2026-11-30\.xlsx/);
+    const bytes = Buffer.from(await res.arrayBuffer());
+    assert.equal(bytes.subarray(0, 2).toString(), "PK", "un .xlsx es un zip");
+  });
+});
+
+// ---------- PIN de la dueña y clave del agente (D105) ----------
+
+describe("Sesión con PIN", () => {
+  let servidorConPin: Server;
+  let raiz = "";
+  let cookie = "";
+
+  before(async () => {
+    const { createApp } = await import("../src/app");
+    servidorConPin = createApp().listen(0);
+    await once(servidorConPin, "listening");
+    raiz = `http://127.0.0.1:${(servidorConPin.address() as AddressInfo).port}/api`;
+  });
+  after(() => {
+    servidorConPin?.close();
+  });
+
+  const pedir = async (metodo: string, ruta: string, cuerpo?: unknown, extra: Record<string, string> = {}) => {
+    const res = await fetch(`${raiz}${ruta}`, {
+      method: metodo,
+      headers: { "Content-Type": "application/json", ...(cookie ? { Cookie: cookie } : {}), ...extra },
+      body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
+    });
+    const galleta = res.headers.get("set-cookie");
+    if (galleta) cookie = galleta.split(";")[0] ?? "";
+    const texto = await res.text();
+    return { status: res.status, body: (texto ? JSON.parse(texto) : null) as Record<string, unknown> };
+  };
+
+  test("sin PIN creado todo está cerrado; al crearlo la dueña queda adentro", async () => {
+    assert.equal((await pedir("GET", "/salud")).status, 200);
+    assert.deepEqual((await pedir("GET", "/sesion")).body, { pinCreado: false, activa: false, minutosInactividad: 60 });
+    const bloqueado = await pedir("GET", "/ventas");
+    assert.equal(bloqueado.status, 401);
+    assert.equal(bloqueado.body.sesion, "bloqueado");
+    assert.equal((await pedir("POST", "/sesion/pin", { pin: "12a4" })).status, 400);
+    assert.equal((await pedir("POST", "/sesion/pin", { pin: "1234" })).status, 201);
+    assert.equal((await pedir("GET", "/ventas")).status, 200);
+    assert.equal((await pedir("POST", "/sesion/pin", { pin: "9999" })).status, 409, "no se puede pisar el PIN sin entrar");
+  });
+
+  test("bloquear y volver a entrar; el PIN no se guarda en texto", async () => {
+    assert.equal((await pedir("POST", "/sesion/salir")).status, 204);
+    assert.equal((await pedir("GET", "/ventas")).status, 401);
+    assert.equal((await pedir("POST", "/sesion/entrar", { pin: "4321" })).status, 401);
+    assert.equal((await pedir("POST", "/sesion/entrar", { pin: "1234" })).status, 200);
+    assert.equal((await pedir("GET", "/ventas")).status, 200);
+    assert.equal((await pedir("POST", "/sesion/actividad")).status, 204);
+    const { prisma } = await import("../src/prisma");
+    const fila = await prisma.configuracion.findUnique({ where: { clave: "seguridad.pin" } });
+    assert.ok(fila && !fila.valor.includes("1234"));
+  });
+
+  test("5 PIN equivocados seguidos → espera de 1 minuto, aun con el PIN correcto", async () => {
+    const { reiniciarIntentos } = await import("../src/services/sesion");
+    cookie = "";
+    for (let i = 0; i < 5; i++) assert.equal((await pedir("POST", "/sesion/entrar", { pin: "0000" })).status, 401);
+    const espera = await pedir("POST", "/sesion/entrar", { pin: "1234" });
+    assert.equal(espera.status, 429);
+    assert.match(String(espera.body.error), /Espera \d+ segundos/);
+    reiniciarIntentos();
+    assert.equal((await pedir("POST", "/sesion/entrar", { pin: "1234" })).status, 200);
+  });
+
+  test("cambiar el PIN pide el actual", async () => {
+    assert.equal((await pedir("PUT", "/sesion/pin", { actual: "1111", nuevo: "567890" })).status, 401);
+    assert.equal((await pedir("PUT", "/sesion/pin", { actual: "1234", nuevo: "567890" })).status, 200);
+    await pedir("POST", "/sesion/salir");
+    assert.equal((await pedir("POST", "/sesion/entrar", { pin: "1234" })).status, 401);
+    assert.equal((await pedir("POST", "/sesion/entrar", { pin: "567890" })).status, 200);
+  });
+
+  test("tras 1 hora sin actividad la sesión se cierra sola", async () => {
+    const { abrirSesion, sesionActiva, anotarActividad } = await import("../src/services/sesion");
+    const inicio = Date.now();
+    const token = abrirSesion(inicio);
+    assert.ok(sesionActiva(token, inicio + 59 * 60_000));
+    assert.ok(anotarActividad(token, inicio + 59 * 60_000));
+    assert.ok(sesionActiva(token, inicio + 118 * 60_000), "la actividad reinicia la hora");
+    assert.equal(sesionActiva(token, inicio + 120 * 60_000), false);
+  });
+
+  test("el agente entra con su clave solo a sus rutas, sin PIN", async () => {
+    const { claveDelAgente } = await import("../src/services/sesion");
+    cookie = "";
+    const clave = await claveDelAgente();
+    const conClave = { "X-Clave-Agente": clave };
+    assert.equal((await pedir("GET", "/productos", undefined, conClave)).status, 200);
+    assert.equal((await pedir("GET", "/agente/config", undefined, conClave)).status, 200);
+    assert.equal((await pedir("GET", "/clientes/por-celular/70000000", undefined, conClave)).status, 200);
+    assert.equal((await pedir("GET", "/ventas", undefined, conClave)).status, 403, "no ve las ventas");
+    assert.equal((await pedir("GET", "/productos", undefined, { "X-Clave-Agente": "otra" })).status, 403);
   });
 });

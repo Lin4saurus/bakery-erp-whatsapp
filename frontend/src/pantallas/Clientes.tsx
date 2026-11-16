@@ -521,12 +521,11 @@ function PreciosCliente({
               ))}
             </select>
           </Campo>
-          <Campo
-            etiqueta="Precio acordado (Bs)"
-            ayuda={elegido ? `Precio de venta: ${bs(elegido.precioVenta)}` : undefined}
-          >
+          <Campo etiqueta="Precio acordado (Bs)">
             <input inputMode="decimal" value={precio} onChange={(e) => setPrecio(e.target.value)} placeholder="0,00" />
           </Campo>
+          {/* Fuera del campo: así la lista, el precio y el botón quedan en la misma línea (la ayuda va debajo). */}
+          {elegido && <span className="campo-ayuda clientes__precio-ayuda">Precio de venta: {bs(elegido.precioVenta)}</span>}
           <Button type="submit" variante="primario" disabled={guardando || !elegido || !esNumeroValido(precio)}>
             {guardando ? "Guardando…" : "Guardar precio"}
           </Button>

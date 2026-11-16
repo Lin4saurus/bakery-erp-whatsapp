@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   MdOutlineDashboard,
   MdOutlineSupportAgent,
@@ -10,10 +10,13 @@ import {
   MdOutlinePeopleAlt,
   MdOutlinePointOfSale,
   MdOutlineReceiptLong,
+  MdOutlineSummarize,
 } from "react-icons/md";
 import { EstadoRespaldo } from "./components/layout/EstadoRespaldo";
 import { Sidebar, type ItemMenu } from "./components/layout/Sidebar";
 import { Topbar } from "./components/layout/Topbar";
+import { Bloqueo, CambiarPin } from "./components/layout/Bloqueo";
+import { useInactividad } from "./hooks/useInactividad";
 import { useTema } from "./hooks/useTema";
 import { Inicio } from "./pantallas/Inicio";
 import { Caja } from "./pantallas/Caja";
@@ -24,7 +27,8 @@ import { Gastos } from "./pantallas/Gastos";
 import { Clientes } from "./pantallas/Clientes";
 import { Pedidos } from "./pantallas/Pedidos";
 import { Atenciones } from "./pantallas/Atenciones";
-import { api } from "./api";
+import { Reportes } from "./pantallas/Reportes";
+import { EVENTO_BLOQUEADO, api } from "./api";
 import { urgentes } from "./pedidos";
 import { conectarAvisos } from "./avisos";
 import "./App.css";
@@ -40,6 +44,7 @@ const pantallas = {
   insumos: Insumos,
   desempeno: Desempeno,
   historial: Historial,
+  reportes: Reportes,
 } as const;
 
 type Pantalla = keyof typeof pantallas;
@@ -58,6 +63,8 @@ const menu: readonly ItemMenu<Pantalla>[] = [
   // Consulta (D67): los números del año y, aparte, la lista de ventas.
   { clave: "desempeno", titulo: "Desempeño", icono: MdOutlineInsights, seccion: "Consulta" },
   { clave: "historial", titulo: "Historial de ventas", icono: MdOutlineHistory, seccion: "Consulta" },
+  // Reporte del periodo para el contador, en Excel o PDF (D106).
+  { clave: "reportes", titulo: "Reportes", icono: MdOutlineSummarize, seccion: "Consulta" },
 ];
 
 const esPantalla = (valor: string): valor is Pantalla => valor in pantallas;
@@ -67,8 +74,51 @@ const desdeHash = (): Pantalla => {
   return esPantalla(hash) ? hash : "inicio";
 };
 
+type Puerta = "cargando" | "crear" | "entrar" | "adentro" | "sin-servidor";
+
+// La puerta del ERP (D105): sin PIN no se monta ninguna pantalla, ni se abren los avisos en vivo.
 export function App() {
+  const [puerta, setPuerta] = useState<Puerta>("cargando");
+  const [minutos, setMinutos] = useState(60);
+  const { tema, alternar } = useTema();
+
+  const revisar = useCallback(async () => {
+    try {
+      const sesion = await api.sesion();
+      setMinutos(sesion.minutosInactividad);
+      setPuerta(sesion.activa ? "adentro" : sesion.pinCreado ? "entrar" : "crear");
+    } catch {
+      setPuerta("sin-servidor");
+    }
+  }, []);
+  useEffect(() => {
+    void revisar();
+    const alBloquearse = () => void revisar();
+    window.addEventListener(EVENTO_BLOQUEADO, alBloquearse);
+    return () => window.removeEventListener(EVENTO_BLOQUEADO, alBloquearse);
+  }, [revisar]);
+
+  const bloquear = useCallback(() => {
+    setPuerta("entrar");
+    api.salir().catch(() => undefined);
+  }, []);
+  useInactividad(puerta === "adentro", minutos, bloquear);
+
+  if (puerta === "adentro") return <Escritorio tema={tema} alternarTema={alternar} bloquear={bloquear} />;
+  return <Bloqueo modo={puerta} listo={() => setPuerta("adentro")} reintentar={() => void revisar()} minutos={minutos} />;
+}
+
+function Escritorio({
+  tema,
+  alternarTema,
+  bloquear,
+}: {
+  tema: ReturnType<typeof useTema>["tema"];
+  alternarTema: () => void;
+  bloquear: () => void;
+}) {
   const [actual, setActual] = useState<Pantalla>(desdeHash);
+  const [cambiandoPin, setCambiandoPin] = useState(false);
   const [menuAbierto, setMenuAbierto] = useState(false);
   // Menú de solo íconos (D62): se recuerda en este navegador.
   const [colapsado, setColapsado] = useState(() => {
@@ -87,7 +137,6 @@ export function App() {
       }
       return !actual;
     });
-  const { tema, alternar } = useTema();
   // Recordatorio en el menú: pedidos atrasados y de hoy. Se revisa cada minuto y al cambiar de pantalla.
   // También los chats que esperan a la dueña (D85).
   const [porAtender, setPorAtender] = useState(0);
@@ -154,11 +203,19 @@ export function App() {
         pie={<EstadoRespaldo compacto={colapsado} />}
       />
       <div className="app__principal">
-        <Topbar titulo={titulo} tema={tema} alternarTema={alternar} abrirMenu={() => setMenuAbierto(true)} />
+        <Topbar
+          titulo={titulo}
+          tema={tema}
+          alternarTema={alternarTema}
+          abrirMenu={() => setMenuAbierto(true)}
+          bloquear={bloquear}
+          cambiarPin={() => setCambiandoPin(true)}
+        />
         <main className="app__contenido">
           <Componente />
         </main>
       </div>
+      {cambiandoPin && <CambiarPin cerrar={() => setCambiandoPin(false)} />}
     </div>
   );
 }

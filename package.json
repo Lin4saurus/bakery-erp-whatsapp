@@ -15,6 +15,7 @@
     "db:check": "tsx database/prisma/check-seed.ts",
     "db:historico": "tsx database/prisma/importar-historico.ts",
     "backup": "tsx backend/src/backup.ts",
+    "pin": "tsx backend/src/pin.ts",
     "demo:pedidos": "tsx database/prisma/demo-pedidos.ts",
     "demo:pedidos:borrar": "tsx database/prisma/demo-pedidos.ts --borrar",
     "dev": "tsx watch backend/src/server.ts",
@@ -27,6 +28,7 @@
   "dependencies": {
     "@fontsource/ibm-plex-sans": "5.1.0",
     "@prisma/client": "6.16.2",
+    "exceljs": "4.4.0",
     "express": "5.1.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
@@ -40,7 +42,7 @@
     "@types/react-dom": "18.3.5",
     "@vitejs/plugin-react": "4.3.4",
     "prisma": "6.16.2",
-    "tsx": "4.19.2",
+    "tsx": "4.23.15",
     "typescript": "5.7.2",
     "vite": "6.0.7"
   }

@@ -131,7 +131,7 @@ async function main() {
       await tx.ingredienteReceta.deleteMany({ where: { productoId: { in: idsAnteriores } } });
       await tx.componenteReceta.deleteMany({ where: { productoId: { in: idsAnteriores } } });
       await tx.precioCliente.deleteMany({ where: { productoId: { in: idsAnteriores } } });
-      await tx.producto.updateMany({ where: { id: { in: idsAnteriores } }, data: { activo: false, disponible: false } });
+      await tx.producto.updateMany({ where: { id: { in: idsAnteriores } }, data: { activo: false } });
       console.log(`Retirados: ${anteriores.map((p) => p.nombre).join(", ")}`);
 
       // 2. Insumos con el precio del Excel.
@@ -172,7 +172,6 @@ async function main() {
             unidadRendimiento: UNIDAD,
             precioVenta: new Prisma.Decimal("16"),
             activo: true,
-            disponible: true,
             ingredientes: {
               create: q.receta.map(([clave, cantidad]) => {
                 const insumoId = idInsumo.get(clave);

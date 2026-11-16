@@ -67,7 +67,6 @@ model Producto {
   // Costo de lo vendido = ingredientes ÷ rendimiento × unidadesPorVenta + empaques (los empaques no se dividen).
   unidadesPorVenta  Decimal      @default(1)
   activo            Boolean      @default(true) // sigue en el catálogo; false = retirado (ej. receta histórica)
-  disponible        Boolean      @default(true) // a la venta ahora en la Caja (productos de temporada se apagan)
   // Receta borrada de un producto que tiene ventas (D63): no se ve en Recetas ni en la Caja; sus ventas siguen en el Historial.
   eliminado         Boolean      @default(false)
   createdAt         DateTime     @default(now())

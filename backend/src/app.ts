@@ -13,12 +13,16 @@ import { atencionesRouter } from "./routes/atenciones";
 import { avisarAlCambiar, eventosRouter } from "./routes/eventos";
 import { agenteRouter } from "./routes/agente";
 import { configuracionRouter } from "./routes/configuracion";
+import { sesionRouter } from "./routes/sesion";
+import { reportesRouter } from "./routes/reportes";
+import { exigirSesion } from "./services/sesion";
 import { errorHandler, notFoundHandler } from "./errors";
 
 // Frontend compilado (`npm run web:build`). En desarrollo lo sirve Vite.
 const FRONTEND_DIST = path.resolve(__dirname, "../../frontend/dist");
 
-export function createApp(): Express {
+// `exigirSesion: false` solo en las pruebas de la API que no son de la sesión.
+export function createApp({ exigirSesion: conSesion = true }: { exigirSesion?: boolean } = {}): Express {
   const app = express();
   // Solo las dos rutas que reciben el comprobante de pago (foto o PDF en base64, D86) aceptan hasta 15 MB; el resto,
   // 100 kB. Un cuerpo enorme en cualquier otra ruta se corta antes de llegar a Zod (S4, AUDITORIA.md).
@@ -28,6 +32,9 @@ export function createApp(): Express {
   app.get("/api/salud", (_req, res) => {
     res.json({ ok: true });
   });
+  // PIN de la dueña (D105): sin sesión solo se puede entrar; el agente de WhatsApp usa su propia clave.
+  app.use("/api/sesion", sesionRouter);
+  if (conSesion) app.use("/api", exigirSesion);
   app.use("/api/insumos", insumosRouter);
   app.use("/api/productos", productosRouter);
   app.use("/api/ventas", ventasRouter);
@@ -42,6 +49,7 @@ export function createApp(): Express {
   app.use("/api/eventos", eventosRouter);
   app.use("/api/agente", agenteRouter);
   app.use("/api/configuracion", configuracionRouter);
+  app.use("/api/reportes", reportesRouter);
 
   if (existsSync(FRONTEND_DIST)) {
     // index.html se revisa siempre, para que una versión nueva se vea al recargar;
