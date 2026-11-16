@@ -17,9 +17,22 @@ const REPO = "Lin4saurus/bakery-erp-whatsapp";
 
 const git = (args: string[]) => execFileSync("git", args, { cwd: RAIZ, encoding: "utf8" }).trim();
 
-function hayGh(): boolean {
+// gh en el PATH o, si la terminal se abrió antes de instalarlo, en su carpeta de siempre.
+function rutaGh(): string | null {
+  for (const gh of ["gh", path.join(process.env.ProgramFiles ?? "C:\\Program Files", "GitHub CLI", "gh.exe")]) {
+    try {
+      execFileSync(gh, ["--version"], { stdio: "ignore" });
+      return gh;
+    } catch {
+      // se prueba el siguiente
+    }
+  }
+  return null;
+}
+
+function ghConSesion(gh: string): boolean {
   try {
-    execFileSync("gh", ["--version"], { stdio: "ignore" });
+    execFileSync(gh, ["auth", "status"], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -89,12 +102,17 @@ async function main(): Promise<void> {
   for (const f of [codigo, completo, manifiesto]) console.log(`  ${path.basename(f)} (${mb(f)})`);
 
   const archivos = [manifiesto, codigo, completo];
+  const gh = prueba ? null : rutaGh();
   if (prueba) {
     console.log("\nModo prueba: no se subió nada.");
-  } else if (hayGh()) {
+  } else if (gh && !ghConSesion(gh)) {
+    console.log("\ngh no tiene sesión en GitHub. Corre una vez `gh auth login` (GitHub.com → HTTPS → navegador) y vuelve a publicar.");
+    console.log(`Los archivos quedan armados en ${destino}.`);
+    process.exitCode = 1;
+  } else if (gh) {
     paso(`Creando la Release v${version} en GitHub`);
     const rama = git(["branch", "--show-current"]);
-    execFileSync("gh", ["release", "create", `v${version}`, ...archivos, "--repo", REPO, "--target", rama, "--title", `Dulzura ERP ${version}`, "--notes", notas], {
+    execFileSync(gh, ["release", "create", `v${version}`, ...archivos, "--repo", REPO, "--target", rama, "--title", `Dulzura ERP ${version}`, "--notes", notas], {
       stdio: "inherit",
     });
     console.log(`\nPublicada. La portátil la verá en el Inicio en unas horas (o al tocar «Buscar actualización»).`);
