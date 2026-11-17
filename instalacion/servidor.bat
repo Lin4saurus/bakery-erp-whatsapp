@@ -9,4 +9,9 @@ if not exist "%NODE%" set "NODE=node"
 if not exist logs mkdir logs
 for %%A in (logs\erp.log) do if %%~zA GTR 5000000 move /y logs\erp.log logs\erp-anterior.log >nul
 echo ---- %date% %time% ---->> logs\erp.log
-"%NODE%" node_modules\tsx\dist\cli.mjs backend\src\server.ts >> logs\erp.log 2>&1
+rem El servidor ya compilado arranca mucho mas rapido (D113); si no esta (copia de desarrollo), se usa tsx.
+if exist "backend\js\server.js" (
+  "%NODE%" backend\js\server.js >> logs\erp.log 2>&1
+) else (
+  "%NODE%" node_modules\tsx\dist\cli.mjs backend\src\server.ts >> logs\erp.log 2>&1
+)

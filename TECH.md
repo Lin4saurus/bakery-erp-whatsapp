@@ -390,3 +390,10 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 - Frontend: `components/layout/Actualizacion.tsx` (`AvisoActualizacion` en el Inicio, `VersionErp` en el pie, ventana de avance). `App` recarga la página si el servidor vuelve con otra versión.
 - Armado: `armar-paquete.ts` exporta `prepararCarpeta` (con o sin dependencias y datos; escribe `dependencias.json` con la huella), `comprimir`, `sha256`, `huellaDependencias`. `publicar.ts` usa esas piezas. Nombres con la versión: `DulzuraERP_Instalador_<v>.exe`.
 - Publicar una versión: subir `version` en package.json → commit y push → `npm run publicar -- --notas "…"`.
+
+## Velocidad al abrir (D113)
+
+- `services/reportes.ts` importa exceljs con `await import("exceljs")` dentro de `reporteEnExcel` (es CommonJS: las clases quedan en `default`). `correoRespaldo.ts` hace lo mismo con nodemailer.
+- `armar-paquete.ts` → `compilarServidor`: esbuild `buildSync` de cada `.ts` de `backend/src` a `backend/js` (cjs, sin juntar en un archivo, para conservar `__dirname`). `backend/js/` está en `.gitignore`.
+- `frontend/src/api.ts`: `pedir` comparte las consultas GET iguales mientras están en camino (`enCamino`); POST/PUT/DELETE nunca.
+- `App.tsx`: `revisar` pide `/api/salud` y `/api/sesion` en paralelo; al saber que hay WhatsApp cuenta los chats directo (antes disparaba «dulzura:avisos» y recargaba el Inicio).

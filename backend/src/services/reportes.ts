@@ -4,7 +4,8 @@
 // compra de insumos no se resta otra vez en la utilidad, porque su costo ya va en el costo de producción (D51).
 
 import { CategoriaGasto, Prisma } from "@prisma/client";
-import ExcelJS from "exceljs";
+// exceljs tarda ~1 s en cargarse: se trae recién al pedir un Excel, no al arrancar el ERP.
+import type { Workbook, Worksheet } from "exceljs";
 import { prisma } from "../prisma";
 import { rangoFechas, sinVentasDemo } from "../routes/ventas";
 
@@ -157,7 +158,7 @@ const fechaCorta = (d: string): string => d.split("-").reverse().join("/");
 // Excel no tiene zona horaria: se le pasa la hora de Bolivia (la de esta PC) para que no muestre la hora UTC.
 const horaLocal = (d: Date): Date => new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
 
-function hoja(libro: ExcelJS.Workbook, nombre: string, columnas: { titulo: string; ancho: number; bs?: boolean }[]) {
+function hoja(libro: Workbook, nombre: string, columnas: { titulo: string; ancho: number; bs?: boolean }[]) {
   const h = libro.addWorksheet(nombre, { views: [{ state: "frozen", ySplit: 1 }] });
   h.columns = columnas.map((c) => ({ header: c.titulo, width: c.ancho, style: c.bs ? { numFmt: BS } : {} }));
   const cabecera = h.getRow(1);
@@ -166,14 +167,17 @@ function hoja(libro: ExcelJS.Workbook, nombre: string, columnas: { titulo: strin
   return h;
 }
 
-function filaTotal(h: ExcelJS.Worksheet, valores: (string | number | null)[]) {
+function filaTotal(h: Worksheet, valores: (string | number | null)[]) {
   const fila = h.addRow(valores);
   fila.font = { bold: true };
   fila.border = { top: { style: "thin" } };
 }
 
 export async function reporteEnExcel(r: Reporte): Promise<Buffer> {
-  const libro = new ExcelJS.Workbook();
+  // exceljs es CommonJS: al importarlo así, sus clases quedan en `default`.
+  const excel = await import("exceljs");
+  const { Workbook: Libro } = "default" in excel ? (excel as unknown as { default: typeof excel }).default : excel;
+  const libro = new Libro();
   libro.creator = "ERP Dulzura Pastelería";
   libro.created = new Date();
   const periodo = `${fechaCorta(r.desde)} al ${fechaCorta(r.hasta)}`;

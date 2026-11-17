@@ -447,7 +447,20 @@ export interface EstadoSesion {
   minutosInactividad: number;
 }
 
-async function pedir<T>(metodo: string, ruta: string, cuerpo?: unknown): Promise<T> {
+// Dos partes de la pantalla que piden lo mismo a la vez (el menú y el Inicio, por ejemplo) comparten una sola
+// consulta (D113). Solo mientras está en camino: la siguiente vez se vuelve a pedir, así nunca hay datos viejos.
+const enCamino = new Map<string, Promise<unknown>>();
+
+function pedir<T>(metodo: string, ruta: string, cuerpo?: unknown): Promise<T> {
+  if (metodo !== "GET") return pedirAlServidor<T>(metodo, ruta, cuerpo);
+  const existente = enCamino.get(ruta);
+  if (existente) return existente as Promise<T>;
+  const promesa = pedirAlServidor<T>(metodo, ruta).finally(() => enCamino.delete(ruta));
+  enCamino.set(ruta, promesa);
+  return promesa;
+}
+
+async function pedirAlServidor<T>(metodo: string, ruta: string, cuerpo?: unknown): Promise<T> {
   let respuesta: Response;
   try {
     respuesta = await fetch(`/api${ruta}`, {

@@ -23,7 +23,7 @@ if not exist ".env" copy ".env.example" ".env" >nul
 
 if not exist "database\prisma\dulzura.db" goto sinRespaldo
 echo [1/3] Respaldo de los datos antes de actualizar...
-"%NODE%" node_modules\tsx\dist\cli.mjs backend\src\backup.ts
+if exist "backend\js\backup.js" ("%NODE%" backend\js\backup.js) else ("%NODE%" node_modules\tsx\dist\cli.mjs backend\src\backup.ts)
 if errorlevel 1 goto error
 :sinRespaldo
 

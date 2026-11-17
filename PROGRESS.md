@@ -484,3 +484,8 @@
 
 - La repostera ya no recibe instaladores nuevos: el Inicio le avisa que hay una versión nueva y se actualiza con un botón (respaldo antes, sus datos no se tocan). El instalador grande queda solo para la primera vez.
 - Decisión: GitHub Releases del repo público (el paquete no lleva datos) con un paquete liviano y uno completo; la portátil elige según la huella de dependencias.
+
+## 2026-11-17 — ERP más rápido al abrir (D113, 1.0.1)
+
+- Se midió antes de cambiar: el arranque del servidor se iba en cargar exceljs y en traducir TypeScript con tsx. Ahora carga exceljs solo al bajar un Excel y la portátil corre el servidor ya compilado (0,3 s).
+- La pantalla de Inicio pedía la lista de pedidos 4 veces al abrir; ahora cada consulta va una sola vez.

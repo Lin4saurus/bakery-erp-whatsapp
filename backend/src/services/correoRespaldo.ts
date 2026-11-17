@@ -3,7 +3,6 @@
 // Gmail no acepta la contraseña normal: se usa una «contraseña de aplicación» (16 letras), que exige tener activada la
 // verificación en 2 pasos. Se guarda en `Configuracion` y se saca de cada respaldo antes de comprimirlo.
 
-import { createTransport } from "nodemailer";
 import { prisma } from "../prisma";
 import { AppError } from "../errors";
 import type { Respaldo } from "./backup";
@@ -34,8 +33,10 @@ export async function estadoCorreo(): Promise<EstadoCorreo> {
   return { correo, ultimoEnvio, error: correo ? error : null };
 }
 
-const transporte = (correo: string, contrasena: string) =>
-  createTransport({
+// nodemailer se carga recién al mandar un correo, no al arrancar el ERP.
+const transporte = async (correo: string, contrasena: string) => {
+  const { createTransport } = await import("nodemailer");
+  return createTransport({
     host: "smtp.gmail.com",
     port: 465,
     secure: true,
@@ -44,6 +45,7 @@ const transporte = (correo: string, contrasena: string) =>
     greetingTimeout: 15_000,
     socketTimeout: 60_000,
   });
+};
 
 // Mensajes que la dueña entiende, en vez del texto en inglés de Gmail.
 function explicar(error: unknown): string {
@@ -70,7 +72,7 @@ export async function configurarCorreo(correo: string, contrasena: string): Prom
   }
   // Primero se prueba con Gmail: si no entra, no se guarda nada.
   try {
-    await transporte(correo, clave).verify();
+    await (await transporte(correo, clave)).verify();
   } catch (error) {
     throw new AppError(422, explicar(error));
   }
@@ -98,7 +100,7 @@ export async function enviarRespaldo(respaldo: Respaldo): Promise<ResultadoEnvio
   const [correo, contrasena] = await Promise.all([leer(CLAVE_CORREO), leer(CLAVE_CONTRASENA)]);
   if (!correo || !contrasena) return null;
   try {
-    await transporte(correo, contrasena).sendMail({
+    await (await transporte(correo, contrasena)).sendMail({
       from: { name: "Dulzura ERP", address: correo },
       to: correo,
       subject: `Respaldo Dulzura ERP · ${fechaLegible(respaldo.fecha)}`,

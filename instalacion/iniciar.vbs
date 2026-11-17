@@ -13,8 +13,8 @@ End If
 
 If Not EstaPrendido() Then
   sh.Run "cmd /c """ & carpeta & "\servidor.bat""", 0, False
-  For i = 1 To 180
-    WScript.Sleep 500
+  For i = 1 To 450
+    WScript.Sleep 200
     If EstaPrendido() Then Exit For
   Next
   If Not EstaPrendido() Then

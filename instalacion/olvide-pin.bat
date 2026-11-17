@@ -10,7 +10,7 @@ echo  Esto borra tu PIN. Al abrir el ERP te pedira crear uno nuevo. Tus ventas y
 echo.
 choice /c SN /m " Borrar el PIN"
 if errorlevel 2 exit /b 0
-"%NODE%" node_modules\tsx\dist\cli.mjs backend\src\pin.ts
+if exist "backend\js\pin.js" ("%NODE%" backend\js\pin.js) else ("%NODE%" node_modules\tsx\dist\cli.mjs backend\src\pin.ts)
 rem Las sesiones abiertas viven en el servidor: se reinicia para que pida el PIN nuevo.
 call "%~dp0detener.bat" /silencio
 start "" wscript "%~dp0iniciar.vbs"

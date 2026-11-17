@@ -14,3 +14,6 @@ logs/
 # Actualizaciones bajadas en la portatil y la huella de dependencias del paquete (D112)
 actualizaciones/
 /dependencias.json
+
+# Servidor compilado (lo arma npm run paquete; D113)
+backend/js/

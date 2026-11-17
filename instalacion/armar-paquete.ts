@@ -9,9 +9,10 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
+import { buildSync } from "esbuild";
 
 export const RAIZ = path.resolve(__dirname, "..");
 export const SALIDA = path.resolve(RAIZ, "..", "dulzura-entrega");
@@ -48,6 +49,32 @@ async function copiarBase(destino: string): Promise<void> {
   correr(process.execPath, [tsx, path.join(RAIZ, "instalacion", "limpiar-copia.ts")], RAIZ, env);
 }
 
+// El servidor va compilado a JavaScript en backend/js (D113): la portátil lo arranca con node directo, sin que tsx
+// traduzca el TypeScript cada vez (al encender la PC eso tardaba varios segundos). Misma profundidad de carpetas que
+// backend/src, para que las rutas con __dirname («../../..») sigan apuntando a la raíz. esbuild llega con tsx.
+function compilarServidor(carpeta: string): void {
+  const origen = path.join(carpeta, "backend", "src");
+  const archivos: string[] = [];
+  const recorrer = (dir: string) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const ruta = path.join(dir, e.name);
+      if (e.isDirectory()) recorrer(ruta);
+      else if (ruta.endsWith(".ts")) archivos.push(ruta);
+    }
+  };
+  recorrer(origen);
+  buildSync({
+    entryPoints: archivos,
+    outdir: path.join(carpeta, "backend", "js"),
+    outbase: origen,
+    platform: "node",
+    format: "cjs",
+    target: `node${process.versions.node.split(".")[0]}`,
+    logLevel: "warning",
+  });
+  if (!existsSync(path.join(carpeta, "backend", "js", "server.js"))) throw new Error("No se compiló el servidor.");
+}
+
 let pantallasCompiladas = false;
 
 // Arma la carpeta del ERP en `carpeta`. Con `dependencias`: node_modules de producción y su propio node.exe.
@@ -81,6 +108,8 @@ export async function prepararCarpeta(carpeta: string, { dependencias, datos }: 
     pantallasCompiladas = true;
   }
   cpSync(path.join(RAIZ, "frontend", "dist"), path.join(carpeta, "frontend", "dist"), { recursive: true });
+  paso("Compilando el servidor");
+  compilarServidor(carpeta);
 
   if (dependencias) {
     paso("Instalando las dependencias del servidor (sin las de desarrollo)");

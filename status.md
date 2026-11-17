@@ -590,3 +590,10 @@ Decisión D44. Sin migración (el celular ya existía en `Cliente`).
 - [x] `npm run publicar` (y `--prueba` para armar sin subir). 2 tests nuevos (125/125).
 - [x] Probado de punta a punta con una instalación 1.0.0 en una carpeta de prueba y un servidor local en lugar de GitHub: 1.0.0 → 1.0.1 (liviano, 1 MB, ~14 s) y 1.0.1 → 1.0.2 (completo, 160 MB, ~58 s); el gasto cargado antes sigue ahí. Arreglados en la prueba: fetch de Node se caía con algunos servidores, el servidor no se cerraba por los avisos en vivo, `tasklist | find` se colgaba, `robocopy /LEV` sin número y el registro cortado por Prisma.
 - [ ] Primera Release real en GitHub (falta instalar `gh` o subirla por la web).
+
+## ERP más rápido al abrir (D113, versión 1.0.1) — COMPLETADO
+
+- [x] Servidor: exceljs y nodemailer bajo demanda; paquete con el servidor compilado (`backend/js`). Arranque 1,3 s → 0,3 s (medido en esta PC).
+- [x] Pantalla: sin consultas repetidas al abrir (22 → 15) y todo cargado en 0,14 s en vez de 0,49 s.
+- [x] 125/125 tests; servidor compilado probado sobre una copia (rutas principales y Excel).
+- [ ] Publicar la 1.0.1 (falta `gh auth login`) y comprobar en la portátil.

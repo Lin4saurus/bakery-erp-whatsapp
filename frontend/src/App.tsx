@@ -87,14 +87,15 @@ export function App() {
   // memoria, así que pide el PIN), se recarga la página para no mezclar pantallas viejas con el servidor nuevo.
   const versionCargada = useRef<string | null>(null);
   const revisar = useCallback(async () => {
-    const version = await api.versionServidor();
+    // Las dos consultas a la vez: al abrir el ERP no se espera una para pedir la otra.
+    const [version, sesion] = await Promise.all([api.versionServidor(), api.sesion().catch(() => null)]);
     if (version && versionCargada.current && version !== versionCargada.current) {
       window.location.reload();
       return;
     }
     if (version) versionCargada.current = version;
     try {
-      const sesion = await api.sesion();
+      if (!sesion) throw new Error("sin servidor");
       setMinutos(sesion.minutosInactividad);
       setPuerta(sesion.activa ? "adentro" : sesion.pinCreado ? "entrar" : "crear");
     } catch {
@@ -161,9 +162,16 @@ function Escritorio({
   }, []);
   const conWhatsapp = useRef(whatsapp);
   conWhatsapp.current = whatsapp;
+  // Apenas se sabe que hay WhatsApp, cuenta los chats (solo eso: avisar a todas las pantallas recargaba el Inicio).
   useEffect(() => {
-    if (whatsapp) window.dispatchEvent(new Event("dulzura:avisos")); // cuenta los chats apenas se sabe
-    else setChatsEsperando(0);
+    if (!whatsapp) {
+      setChatsEsperando(0);
+      return;
+    }
+    api
+      .atenciones("PENDIENTE")
+      .then((lista) => setChatsEsperando(new Set(lista.map((a) => a.celular.slice(-8))).size))
+      .catch(() => undefined);
   }, [whatsapp]);
   useEffect(() => {
     const revisar = () => {
