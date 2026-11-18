@@ -397,3 +397,11 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 - `armar-paquete.ts` → `compilarServidor`: esbuild `buildSync` de cada `.ts` de `backend/src` a `backend/js` (cjs, sin juntar en un archivo, para conservar `__dirname`). `backend/js/` está en `.gitignore`.
 - `frontend/src/api.ts`: `pedir` comparte las consultas GET iguales mientras están en camino (`enCamino`); POST/PUT/DELETE nunca.
 - `App.tsx`: `revisar` pide `/api/salud` y `/api/sesion` en paralelo; al saber que hay WhatsApp cuenta los chats directo (antes disparaba «dulzura:avisos» y recargaba el Inicio).
+
+## Demo en Vercel (D114)
+
+- `vercel.json`: instala con `npm ci`, construye con `npm run demo:armar`, publica `frontend/dist`; `/api/*` se reescribe a la función `api/index.ts` y lo demás a `index.html`. La función incluye `demo.db`, `package.json`, `backend/js/**` y el cliente de Prisma.
+- `demo/armar-demo.ts`: `prisma generate` (solo en Vercel), `migrate deploy` + `seed.ts` + `cargar-queques-2026.ts` + `demo-pedidos.ts` + `demo/ajustar-base.ts` sobre `file:./demo.db`; luego `compilarServidor` (de `armar-paquete.ts`) y `vite build` con `VITE_DEMO=1`.
+- `api/index.ts`: copia `demo.db` a `os.tmpdir()` si no está, fija `DATABASE_URL`, `DULZURA_DEMO=1`, `BACKUP_AUTO=false`, `BACKUP_DIR` temporal y `TZ=America/La_Paz`, y recién entonces hace `require("../backend/js/app.js")`.
+- Backend con `DULZURA_DEMO=1`: `sesionActiva` y `anotarActividad` devuelven siempre true, `GET /api/sesion` dice `pinCreado: true`, `configurarCorreo` responde 400.
+- Frontend: `src/demo.ts` exporta `EN_DEMO` (`import.meta.env.VITE_DEMO === "1"`): aviso `.aviso-demo`, sin botones de PIN, sin `conectarAvisos` ni `VersionErp`.

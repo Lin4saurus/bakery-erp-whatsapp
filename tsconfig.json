@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["database/**/*.ts", "backend/src/**/*.ts", "instalacion/**/*.ts"]
+  "include": ["database/**/*.ts", "backend/src/**/*.ts", "instalacion/**/*.ts", "demo/**/*.ts", "api/**/*.ts"]
 }

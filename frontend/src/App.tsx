@@ -32,6 +32,7 @@ import { Reportes } from "./pantallas/Reportes";
 import { EVENTO_BLOQUEADO, api } from "./api";
 import { urgentes } from "./pedidos";
 import { conectarAvisos } from "./avisos";
+import { EN_DEMO } from "./demo";
 import "./App.css";
 
 const pantallas = {
@@ -187,7 +188,7 @@ function Escritorio({
     };
     revisar();
     // Avisos en vivo del servidor (D88): un chat nuevo en Atención o un pedido de WhatsApp se ven al instante.
-    const desconectar = conectarAvisos();
+    const desconectar = EN_DEMO ? () => undefined : conectarAvisos();
     const reloj = window.setInterval(revisar, 60_000); // respaldo por si la conexión en vivo falla
     window.addEventListener("hashchange", revisar);
     window.addEventListener("dulzura:avisos", revisar); // aviso del servidor o una pantalla resolvió algo
@@ -236,7 +237,7 @@ function Escritorio({
         pie={
           <>
             <EstadoRespaldo compacto={colapsado} />
-            {!colapsado && <VersionErp />}
+            {!colapsado && !EN_DEMO && <VersionErp />}
           </>
         }
       />
@@ -249,6 +250,11 @@ function Escritorio({
           bloquear={bloquear}
           cambiarPin={() => setCambiandoPin(true)}
         />
+        {EN_DEMO && (
+          <div className="aviso-demo" role="note">
+            <strong>Demo con datos de ejemplo.</strong> Puedes probar todo: lo que registres se borra solo al rato.
+          </div>
+        )}
         <main className="app__contenido">
           <Componente />
         </main>

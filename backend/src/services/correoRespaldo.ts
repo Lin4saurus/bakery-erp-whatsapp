@@ -65,6 +65,7 @@ function explicar(error: unknown): string {
 const limpiarContrasena = (contrasena: string) => contrasena.replace(/\s/g, "");
 
 export async function configurarCorreo(correo: string, contrasena: string): Promise<void> {
+  if (process.env.DULZURA_DEMO === "1") throw new AppError(400, "En la demo en línea no se mandan respaldos por correo.");
   const clave = limpiarContrasena(contrasena);
   if (!CORREO_VALIDO.test(correo)) throw new AppError(400, "Escribe un correo de Gmail (termina en @gmail.com).");
   if (!/^[a-z]{16}$/i.test(clave)) {

@@ -1,5 +1,6 @@
 import { MdMenu, MdOutlineDarkMode, MdOutlineLightMode, MdOutlineLock, MdOutlinePassword } from "react-icons/md";
 import type { Tema } from "../../hooks/useTema";
+import { EN_DEMO } from "../../demo";
 import "./Topbar.css";
 
 export function Topbar({
@@ -38,13 +39,17 @@ export function Topbar({
         >
           {esOscuro ? <MdOutlineLightMode /> : <MdOutlineDarkMode />}
         </button>
-        {/* PIN de la dueña (D105): cambiarlo, o bloquear el ERP al alejarse de la caja. */}
-        <button className="topbar__boton" onClick={cambiarPin} aria-label="Cambiar PIN" title="Cambiar PIN">
-          <MdOutlinePassword />
-        </button>
-        <button className="topbar__boton" onClick={bloquear} aria-label="Bloquear el ERP" title="Bloquear (pide el PIN)">
-          <MdOutlineLock />
-        </button>
+        {/* PIN de la dueña (D105): cambiarlo, o bloquear el ERP al alejarse de la caja. La demo no tiene PIN (D114). */}
+        {!EN_DEMO && (
+          <>
+            <button className="topbar__boton" onClick={cambiarPin} aria-label="Cambiar PIN" title="Cambiar PIN">
+              <MdOutlinePassword />
+            </button>
+            <button className="topbar__boton" onClick={bloquear} aria-label="Bloquear el ERP" title="Bloquear (pide el PIN)">
+              <MdOutlineLock />
+            </button>
+          </>
+        )}
         <div className="topbar__perfil">
           <span className="topbar__avatar" aria-hidden>
             D

@@ -104,12 +104,18 @@ export function abrirSesion(ahora = Date.now()): string {
   return token;
 }
 
+// Demo en línea (D114, Vercel): sin PIN, todos entran. Vercel puede atender cada consulta en un servidor distinto,
+// así que una sesión guardada en memoria se perdería entre una y otra.
+export const enDemo = (): boolean => process.env.DULZURA_DEMO === "1";
+
 export function sesionActiva(token: string | undefined, ahora = Date.now()): boolean {
+  if (enDemo()) return true;
   for (const [t, s] of sesiones) if (ahora - s.ultimaActividad > INACTIVIDAD_MS) sesiones.delete(t);
   return token !== undefined && sesiones.has(token);
 }
 
 export function anotarActividad(token: string | undefined, ahora = Date.now()): boolean {
+  if (enDemo()) return true;
   if (!sesionActiva(token, ahora) || token === undefined) return false;
   sesiones.set(token, { ultimaActividad: ahora });
   return true;

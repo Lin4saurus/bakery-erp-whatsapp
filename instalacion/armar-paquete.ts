@@ -52,7 +52,7 @@ async function copiarBase(destino: string): Promise<void> {
 // El servidor va compilado a JavaScript en backend/js (D113): la portátil lo arranca con node directo, sin que tsx
 // traduzca el TypeScript cada vez (al encender la PC eso tardaba varios segundos). Misma profundidad de carpetas que
 // backend/src, para que las rutas con __dirname («../../..») sigan apuntando a la raíz. esbuild llega con tsx.
-function compilarServidor(carpeta: string): void {
+export function compilarServidor(carpeta: string): void {
   const origen = path.join(carpeta, "backend", "src");
   const archivos: string[] = [];
   const recorrer = (dir: string) => {

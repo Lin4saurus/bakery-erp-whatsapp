@@ -597,3 +597,9 @@ Decisión D44. Sin migración (el celular ya existía en `Cliente`).
 - [x] Pantalla: sin consultas repetidas al abrir (22 → 15) y todo cargado en 0,14 s en vez de 0,49 s.
 - [x] 125/125 tests; servidor compilado probado sobre una copia (rutas principales y Excel).
 - [ ] Publicar la 1.0.1 (falta `gh auth login`) y comprobar en la portátil.
+
+## Demo en línea en Vercel (D114)
+
+- [x] Modo demo: base de ejemplo armada desde cero, sin PIN, sin correo ni avisos en vivo, aviso «Demo» en pantalla.
+- [x] `vercel.json` + función `api/index.ts`; probado simulando Vercel en la PC (pantalla, pedidos, respaldo, Excel). 126/126 tests.
+- [ ] Desplegar en Vercel (cuenta del usuario) y revisar la URL.

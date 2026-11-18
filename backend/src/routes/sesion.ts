@@ -10,6 +10,7 @@ import {
   cerrarSesion,
   cookieBorrada,
   cookieDeSesion,
+  enDemo,
   guardarPin,
   hayPin,
   leerCookie,
@@ -28,7 +29,7 @@ export const sesionRouter = Router();
 
 sesionRouter.get("/", async (req, res) => {
   res.json({
-    pinCreado: await hayPin(),
+    pinCreado: enDemo() || (await hayPin()),
     activa: sesionActiva(leerCookie(req.headers.cookie)),
     minutosInactividad: MINUTOS_INACTIVIDAD,
   });

@@ -2951,4 +2951,21 @@ describe("Sesión con PIN", () => {
     assert.equal((await pedir("GET", "/ventas", undefined, conClave)).status, 403, "no ve las ventas");
     assert.equal((await pedir("GET", "/productos", undefined, { "X-Clave-Agente": "otra" })).status, 403);
   });
+
+  test("la demo en línea entra sin PIN y no manda correos (D114)", async () => {
+    cookie = "";
+    assert.equal((await pedir("GET", "/ventas")).status, 401, "fuera de la demo sigue pidiendo PIN");
+    process.env.DULZURA_DEMO = "1";
+    try {
+      assert.deepEqual((await pedir("GET", "/sesion")).body, { pinCreado: true, activa: true, minutosInactividad: 60 });
+      assert.equal((await pedir("GET", "/ventas")).status, 200);
+      assert.equal((await pedir("POST", "/sesion/actividad")).status, 204);
+      const correo = await pedir("PUT", "/backups/correo", { correo: "dulzura@gmail.com", contrasena: "abcdefghijklmnop" });
+      assert.equal(correo.status, 400);
+      assert.match(String(correo.body.error), /demo/);
+    } finally {
+      delete process.env.DULZURA_DEMO;
+    }
+    assert.equal((await pedir("GET", "/ventas")).status, 401);
+  });
 });

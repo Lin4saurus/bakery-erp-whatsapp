@@ -489,3 +489,7 @@
 
 - Se midió antes de cambiar: el arranque del servidor se iba en cargar exceljs y en traducir TypeScript con tsx. Ahora carga exceljs solo al bajar un Excel y la portátil corre el servidor ya compilado (0,3 s).
 - La pantalla de Inicio pedía la lista de pedidos 4 veces al abrir; ahora cada consulta va una sola vez.
+
+## 2026-11-18 — Demo en línea en Vercel (D114)
+
+- Para mostrar el ERP con una URL. Vercel no guarda archivos, así que la demo usa una base de ejemplo que se vuelve a armar en cada despliegue y entra sin PIN. Los datos reales del negocio nunca salen de la portátil.
