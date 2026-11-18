@@ -250,11 +250,6 @@ function Escritorio({
           bloquear={bloquear}
           cambiarPin={() => setCambiandoPin(true)}
         />
-        {EN_DEMO && (
-          <div className="aviso-demo" role="note">
-            <strong>Demo con datos de ejemplo.</strong> Puedes probar todo: lo que registres se borra solo al rato.
-          </div>
-        )}
         <main className="app__contenido">
           <Componente />
         </main>
