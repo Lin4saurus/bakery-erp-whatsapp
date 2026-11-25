@@ -5,6 +5,7 @@
 
 import { prisma } from "../prisma";
 import { AppError } from "../errors";
+import { nombreDelNegocio } from "./negocio";
 import type { Respaldo } from "./backup";
 
 export const CLAVE_CORREO = "respaldo.correo";
@@ -100,13 +101,14 @@ export type ResultadoEnvio = { enviado: true } | { enviado: false; error: string
 export async function enviarRespaldo(respaldo: Respaldo): Promise<ResultadoEnvio> {
   const [correo, contrasena] = await Promise.all([leer(CLAVE_CORREO), leer(CLAVE_CONTRASENA)]);
   if (!correo || !contrasena) return null;
+  const negocio = await nombreDelNegocio();
   try {
     await (await transporte(correo, contrasena)).sendMail({
-      from: { name: "Dulzura ERP", address: correo },
+      from: { name: `ERP ${negocio}`, address: correo },
       to: correo,
-      subject: `Respaldo Dulzura ERP · ${fechaLegible(respaldo.fecha)}`,
+      subject: `Respaldo ERP · ${negocio} · ${fechaLegible(respaldo.fecha)}`,
       text: [
-        `Respaldo automático del ERP de Dulzura Pastelería (${fechaLegible(respaldo.fecha)}).`,
+        `Respaldo automático del ERP de ${negocio} (${fechaLegible(respaldo.fecha)}).`,
         "",
         "El archivo adjunto tiene todos los datos del ERP: productos, recetas, insumos, clientes, ventas, pedidos y gastos.",
         "No se abre con Excel: sirve para devolver el ERP a este día si la portátil se pierde o se daña.",

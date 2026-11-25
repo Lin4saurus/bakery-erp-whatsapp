@@ -398,6 +398,13 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 - `frontend/src/api.ts`: `pedir` comparte las consultas GET iguales mientras están en camino (`enCamino`); POST/PUT/DELETE nunca.
 - `App.tsx`: `revisar` pide `/api/salud` y `/api/sesion` en paralelo; al saber que hay WhatsApp cuenta los chats directo (antes disparaba «dulzura:avisos» y recargaba el Inicio).
 
+## Abrir aún más rápido (D115, versión 1.0.2)
+
+- `App.tsx`: solo `Inicio` va en el paquete inicial; las otras 10 pantallas son `lazy` (`cargadores`) y `precargarPantallas` las baja con `requestIdleCallback` apenas se muestra el escritorio, así que el menú no espera. JS inicial 329 kB → 216 kB, CSS 64 kB → 37 kB.
+- `frontend/index.html`: pantalla de carga en línea (logo «D», colores del tema) dentro de `#root`; se pinta antes de que llegue el JavaScript y React la reemplaza.
+- `app.ts`: `/assets/*` con `Cache-Control: public, max-age=31536000, immutable` (llevan hash); `index.html` sigue `no-cache`. Al reabrir, Edge no pide ningún archivo (27 de 27 desde su caché) y reutiliza el JavaScript ya compilado.
+- Lo que queda es el arranque de Edge en frío: en la portátil se puede activar «Aumento de inicio» en edge://settings/system.
+
 ## Demo en Vercel (D114)
 
 - `vercel.json`: instala con `npm ci`, construye con `npm run demo:armar`, publica `frontend/dist`; `/api/*` se reescribe a la función `api/index.ts` y lo demás a `index.html`. La función incluye `demo.db`, `package.json`, `backend/js/**` y el cliente de Prisma.
@@ -405,3 +412,34 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 - `api/index.ts`: copia `demo.db` a `os.tmpdir()` si no está, fija `DATABASE_URL`, `DULZURA_DEMO=1`, `BACKUP_AUTO=false`, `BACKUP_DIR` temporal y `TZ=America/La_Paz`, y recién entonces hace `require("../backend/js/app.js")`.
 - Backend con `DULZURA_DEMO=1`: `sesionActiva` y `anotarActividad` devuelven siempre true, `GET /api/sesion` dice `pinCreado: true`, `configurarCorreo` responde 400.
 - Frontend: `src/demo.ts` exporta `EN_DEMO` (`import.meta.env.VITE_DEMO === "1"`): aviso `.aviso-demo`, sin botones de PIN, sin `conectarAvisos` ni `VersionErp`.
+
+## Catálogo Rainbow (D115)
+
+- `database/prisma/cargar-rainbow.ts --confirmar`: en una transacción borra (en orden de claves foráneas) atenciones, líneas de pedido, pedidos, precios de cliente, ventas históricas, gastos, movimientos, ventas, sub-recetas, ingredientes, productos, insumos, clientes y `finanzas.gastosFijosMensuales`; luego crea insumos (MATERIA_PRIMA y EMPAQUE), las mezclas INTERMEDIO en gramos (rendimiento = peso de la tanda, huevo ≈ 50 g, −8 %) y los productos de VENTA con rendimiento 1 (una torta o un paquete por tanda), sub-recetas en gramos e insumos sueltos + empaque. Termina con VACUUM.
+- `porPersonas` escala la receta por persona al tamaño (caja chica ≤ 4, mediana ≤ 10, grande); `porPaquetes` escala la receta por pieza a las piezas del paquete.
+
+## Descargas del Historial (D116)
+
+- `services/exportarVentas.ts`: `ventasEnExcel`, `ventasEnWord`, `ventasEnPdf` y `totales`. Hora de Bolivia, 24 h. `routes/exportar.ts` valida con Zod (hasta 20 000 filas); `app.ts` monta `express.json({ limit: "5mb" })` solo para esa ruta.
+- `docx` 9.5.0 y `pdfkit` 0.17.1 (exactas) con `await import`. Ojo: no importar tipos de `docx` con `import type` (choca la versión CJS con la ESM del import dinámico).
+- `Historial.tsx` → `DescargarVentas`: arma `ListaParaDescargar` con `filtradas` y un texto de los filtros, y baja el blob.
+
+## Nombre del negocio (D117)
+
+- `services/negocio.ts`: `CLAVE_NOMBRE = "negocio.nombre"`, `nombreDelNegocio()` (por defecto «Mi pastelería»). `routes/negocio.ts`: `leerNegocio` (montado antes de `exigirSesion`) y `guardarNegocio` (después). Lo usan `reportes.ts` (Excel) y `correoRespaldo.ts`.
+- `frontend/src/negocio.ts`: almacén con `useSyncExternalStore` (`useNombreNegocio`, `fijarNombreNegocio`, `cargarNombreNegocio`, `inicialNegocio`); recuerda el nombre en `localStorage["negocio-nombre"]`, que `index.html` lee para la pantalla de carga y el título.
+- `Ventana` acepta `angosta` (440 px); `.ventana__cuerpo > .bloqueo__form` lleva padding.
+
+## Tamaños (D118)
+
+- Schema: `Producto.grupo String?`, `Producto.tamano String?`, `@@index([grupo])`. La migración llena los dos partiendo «grupo · tamaño» en los productos de venta.
+- `routes/productos.ts`: `armarNombre(nombre, grupo, tamano)` arma «grupo · tamaño» (sin tamaño, grupo y tamaño en null; «·» no se acepta adentro). `PATCH` con otro grupo o categoría lo aplica a los hermanos (mismo `grupo`). `POST /:id/tamanos` {tamano, precioVenta, factor, tamanoActual?}: copia el producto; ingredientes y sub-recetas × factor (4 decimales), EMPAQUE tal cual; si el original no tenía tamaño, pide `tamanoActual` y lo renombra.
+- `frontend/src/tamanos.ts`: `agruparTamanos`, `ordenarTamanos` (por el primer número del tamaño), `factorEntre`. Caja: `agregarTamano` (el primer tamaño que no está en el pedido) y `cambiarTamano` (cambia `productoId` y el precio). Recetas: `gruposAbiertos`, `TamanosDelProducto`.
+- Caja (D119): `lineasDe(g)`, `unidadesDe(g)`, `masUno(g)` (suma a la última línea del producto o `agregarTamano`) y `menosUno(g)`; una sola forma de tarjeta para productos con y sin tamaños. `.app__contenido:has(> .caja)` quita el máximo de 1400 px.
+
+## Ventas de antes del ERP (D121)
+
+- `services/ventasAnteriores.ts`: `revisarFilas` (valida fecha ≤ hoy, producto, cantidad > 0, total ≥ 0; une el producto por nombre sin tildes ni «·» y estima el costo con `calcularCostoProducto`), `guardarFilas` (createMany en `VentaHistorica`, `fila` = máximo de la hoja + 1, cliente unido por `normalizarNombre`), `plantillaExcel`, `leerExcel` (busca la fila de títulos con «Fecha» y «Producto»; fechas Date o dd/mm/aaaa; números «1.234,50»).
+- `routes/historico.ts`: `GET /plantilla`, `POST /anotar` {ventas} (todo o nada; 400 con `detalles` «fila N»), `POST /importar[?probar=1]` {nombre, archivo base64} (8 MB en `app.ts`). `AppError` acepta `detalles`.
+- Frontend: `pantallas/VentasAnteriores.tsx` (`UnaPorUna`, `DesdeExcel`); `Ventana` acepta `ancha` (1180 px).
+- Compras (D122): `registrarCompra` con `actualizarPrecio` (por defecto true en `POST /api/gastos`) recalcula `precioEnvase`: envases → monto / envases; cantidad → monto / cantidad × contenidoEnvase. Gastos.tsx muestra la casilla en los dos modos.

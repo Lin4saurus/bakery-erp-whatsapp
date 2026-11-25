@@ -22,6 +22,18 @@
   overflow: hidden;
 }
 
+.ventana--angosta {
+  width: min(440px, 100%);
+}
+
+.ventana--ancha {
+  width: min(1180px, 100%);
+}
+
+.ventana--mediana {
+  width: min(620px, 100%);
+}
+
 .ventana__cabecera {
   display: flex;
   align-items: flex-start;

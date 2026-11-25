@@ -493,3 +493,14 @@
 ## 2026-11-18 — Demo en línea en Vercel (D114)
 
 - Para mostrar el ERP con una URL. Vercel no guarda archivos, así que la demo usa una base de ejemplo que se vuelve a armar en cada despliegue y entra sin PIN. Los datos reales del negocio nunca salen de la portátil.
+
+## 2026-11-25 — Pastelería Rainbow y descargas del Historial (D115, D116)
+
+- El ERP ahora es de la nueva repostera, Rainbow: se borró todo lo de la anterior y se cargó su catálogo saludable con todos los tamaños y precios. Las recetas son de ejemplo hasta que ella ponga las reales.
+- El Historial de ventas se puede bajar en Excel, Word o PDF, tal como se ve con los filtros.
+- La dueña puede cambiar el nombre del negocio desde el ERP (D117): sale en el menú, el PIN, los reportes y las descargas.
+
+## 2026-11-25 — Tamaños de un producto (D118)
+
+- Las tortas ya no son 52 botones: cada producto aparece una vez y el tamaño (2, 4, 8… personas, o el paquete) se elige en el pedido. En Recetas, cada producto muestra sus tamaños y se puede agregar uno nuevo copiando la receta.
+- La repostera puede cargar lo que vendió antes de usar el ERP desde el Historial de ventas: una por una o subiendo la plantilla de Excel (D121).

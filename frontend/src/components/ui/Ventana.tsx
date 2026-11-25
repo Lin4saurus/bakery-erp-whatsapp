@@ -8,11 +8,17 @@ export function Ventana({
   titulo,
   subtitulo,
   cerrar,
+  angosta = false,
+  ancha = false,
+  mediana = false,
   children,
 }: {
   titulo: ReactNode;
   subtitulo?: ReactNode;
   cerrar: () => void;
+  angosta?: boolean; // formularios cortos (PIN, nombre del negocio): 440 px en vez de 860 px
+  ancha?: boolean; // tablas para llenar (ventas anteriores, D121): hasta 1180 px
+  mediana?: boolean; // formularios con instrucciones (respaldo por correo): 620 px
   children: ReactNode;
 }) {
   useEffect(() => {
@@ -31,7 +37,7 @@ export function Ventana({
   // Se dibuja en <body> para quedar encima de todo, aunque la pantalla tenga zoom o su propio apilamiento.
   return createPortal(
     <div className="ventana-fondo" onMouseDown={(e) => e.target === e.currentTarget && cerrar()}>
-      <div className="ventana" role="dialog" aria-modal="true">
+      <div className={`ventana ${angosta ? "ventana--angosta" : ""} ${ancha ? "ventana--ancha" : ""} ${mediana ? "ventana--mediana" : ""}`} role="dialog" aria-modal="true">
         <div className="ventana__cabecera">
           <div>
             <h2 className="ventana__titulo">{titulo}</h2>

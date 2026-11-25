@@ -4,6 +4,7 @@ import { Prisma, type TipoCliente, type VentaHistorica } from "@prisma/client";
 import { prisma } from "../prisma";
 import { AppError } from "../errors";
 import { alMenosUnCampo, decimalNoNegativo, decimalPositivo, parseId } from "../validacion";
+import { guardarFilas, leerExcel, plantillaExcel, revisarFilas } from "../services/ventasAnteriores";
 
 const fechaDia = z
   .string()
@@ -104,6 +105,64 @@ historicoRouter.get("/", async (req, res) => {
       pedidoId: (lineasPorPedido.get(`${hoja}|${fila}`) ?? 0) > 1 ? `h-${hoja}-${fila}` : null,
     })),
   });
+});
+
+// ---------- Ventas de antes del ERP (D121) ----------
+
+// Plantilla de Excel para llenar: columnas, dos filas de ejemplo, ayuda y la lista de productos.
+historicoRouter.get("/plantilla", async (_req, res) => {
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", 'attachment; filename="plantilla_ventas_anteriores.xlsx"');
+  res.send(await plantillaExcel());
+});
+
+const filaAnteriorSchema = z.object({
+  fecha: z.string(),
+  producto: z.string().max(200),
+  cantidad: z.number().finite(),
+  total: z.number().finite(),
+  cliente: z.string().max(100).nullable().optional(),
+});
+const anotarSchema = z.object({ ventas: z.array(filaAnteriorSchema).min(1, "Anota al menos una venta.").max(500) });
+
+// Una por una desde la pantalla: si alguna fila tiene un error no se guarda nada y se dice cuál.
+historicoRouter.post("/anotar", async (req, res) => {
+  const { ventas } = anotarSchema.parse(req.body);
+  const revisadas = await revisarFilas(ventas.map((v, i) => ({ ...v, numero: i + 1 })));
+  const conError = revisadas.filter((f) => f.error);
+  if (conError.length > 0) {
+    throw new AppError(
+      400,
+      "Revisa las filas marcadas.",
+      conError.map((f) => ({ campo: `fila ${f.numero}`, mensaje: f.error as string })),
+    );
+  }
+  const guardadas = await guardarFilas(revisadas, "Anotadas en el ERP");
+  res.status(201).json({ guardadas, sinReceta: revisadas.filter((f) => f.productoId === null).length });
+});
+
+// Desde Excel: con `probar` solo revisa y devuelve cada fila (lo que se va a guardar y qué tiene error);
+// sin `probar` guarda las filas buenas y salta las que tienen error.
+const importarSchema = z.object({ nombre: z.string().max(200), archivo: z.string().min(1) });
+historicoRouter.post("/importar", async (req, res) => {
+  const { nombre, archivo } = importarSchema.parse(req.body);
+  const probar = req.query.probar === "1";
+  let filas;
+  try {
+    filas = await leerExcel(Buffer.from(archivo, "base64"));
+  } catch {
+    throw new AppError(400, "No se pudo leer el archivo: súbelo como Excel (.xlsx).");
+  }
+  if (filas.length === 0) {
+    throw new AppError(400, "No encontré ventas: la primera hoja necesita columnas «Fecha» y «Producto» (usa la plantilla).");
+  }
+  const revisadas = await revisarFilas(filas);
+  if (probar) {
+    res.json({ filas: revisadas });
+    return;
+  }
+  const guardadas = await guardarFilas(revisadas, `Excel: ${nombre}`.slice(0, 120));
+  res.status(201).json({ guardadas, saltadas: revisadas.length - guardadas, sinReceta: revisadas.filter((f) => !f.error && f.productoId === null).length });
 });
 
 async function buscarVigente(id: number) {

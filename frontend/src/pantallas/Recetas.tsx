@@ -12,6 +12,7 @@ import {
 } from "../api";
 import { bs, cantidad, costoUnidad, esNumeroValido, nombreUnidad, normalizarNumero, porcentaje, unidadCorta } from "../formato";
 import { Aviso, Campo, Cargando, Panel, Tarjeta, Ventana, useDatos } from "../ui";
+import { agruparTamanos, factorEntre, ordenarTamanos } from "../tamanos";
 import "./Recetas.css";
 
 // Valor del selector de categoría que abre el campo para escribir una nueva (D63).
@@ -69,7 +70,23 @@ export function Recetas() {
       return nuevas;
     });
 
-  const botonProducto = (p: Producto, rama?: "media" | "ultima") => {
+  // Productos con tamaños abiertos en la lista (D118); el del producto elegido se abre solo.
+  const [gruposAbiertos, setGruposAbiertos] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (seleccionado?.grupo) {
+      const clave = `g:${seleccionado.categoria}:${seleccionado.grupo}`;
+      setGruposAbiertos((a) => (a.has(clave) ? a : new Set(a).add(clave)));
+    }
+  }, [seleccionado?.id, seleccionado?.grupo]); // eslint-disable-line react-hooks/exhaustive-deps
+  const alternarGrupo = (clave: string) =>
+    setGruposAbiertos((a) => {
+      const nuevos = new Set(a);
+      if (nuevos.has(clave)) nuevos.delete(clave);
+      else nuevos.add(clave);
+      return nuevos;
+    });
+
+  const botonProducto = (p: Producto, rama?: "media" | "ultima", texto?: string) => {
     const pierde = p.gananciaUnitaria !== null && Number(p.gananciaUnitaria) < 0;
     return (
       <li key={p.id}>
@@ -87,7 +104,7 @@ export function Recetas() {
                 {rama === "ultima" ? "└─ " : "├─ "}
               </span>
             )}
-            {p.nombre}
+            {texto ?? p.nombre}
           </span>
           {p.tipo === "VENTA" && (
             <span className={`etiqueta ${pierde ? "etiqueta-negativa" : "etiqueta-positiva"}`}>
@@ -147,7 +164,7 @@ export function Recetas() {
                                       </span>{" "}
                                       {f}
                                     </span>
-                                    <span className="secundario">{lista.length}</span>
+                                    <span className="secundario">{agruparTamanos(lista).length}</span>
                                   </button>
                                   <button
                                     className="lista-familia__borrar"
@@ -160,7 +177,34 @@ export function Recetas() {
                                 </div>
                                 {abierta && (
                                   <ul className="lista-productos lista-productos--hijos">
-                                    {lista.map((p, i) => botonProducto(p, i === lista.length - 1 ? "ultima" : "media"))}
+                                    {/* Tamaños (D118): un producto con varios tamaños se abre y muestra cada uno. */}
+                                    {agruparTamanos(lista).map((g, i, todos) => {
+                                      const rama = i === todos.length - 1 ? "ultima" : "media";
+                                      if (g.tamanos.length === 1) return botonProducto(g.tamanos[0] as Producto, rama);
+                                      const abierto = gruposAbiertos.has(g.clave);
+                                      const conPerdida = g.tamanos.some((t) => t.gananciaUnitaria !== null && Number(t.gananciaUnitaria) < 0);
+                                      return (
+                                        <li key={g.clave}>
+                                          <button className="lista-grupo-tamanos" aria-expanded={abierto} onClick={() => alternarGrupo(g.clave)}>
+                                            <span>
+                                              <span className="lista-rama" aria-hidden>
+                                                {rama === "ultima" ? "└─ " : "├─ "}
+                                              </span>
+                                              <span className="lista-familia__flecha" aria-hidden>
+                                                {abierto ? "▼" : "▶"}
+                                              </span>{" "}
+                                              {g.nombre}
+                                            </span>
+                                            <span className={`secundario ${conPerdida ? "negativo" : ""}`}>{g.tamanos.length} tamaños</span>
+                                          </button>
+                                          {abierto && (
+                                            <ul className="lista-productos lista-productos--tamanos">
+                                              {g.tamanos.map((t, j) => botonProducto(t, j === g.tamanos.length - 1 ? "ultima" : "media", t.tamano ?? t.nombre))}
+                                            </ul>
+                                          )}
+                                        </li>
+                                      );
+                                    })}
                                   </ul>
                                 )}
                               </li>
@@ -213,6 +257,16 @@ export function Recetas() {
               intermedios={productos.datos.filter((p) => p.tipo === "INTERMEDIO" && p.id !== seleccionado.id)}
               categoriasDe={categoriasDe}
               alCambiar={productos.recargar}
+              hermanos={
+                seleccionado.grupo
+                  ? ordenarTamanos(
+                      productos.datos.filter(
+                        (p) => p.tipo === "VENTA" && p.grupo === seleccionado.grupo && p.categoria === seleccionado.categoria,
+                      ),
+                    )
+                  : [seleccionado]
+              }
+              elegir={setSeleccionadoId}
               alBorrar={async (texto) => {
                 setSeleccionadoId(null);
                 await productos.recargar();
@@ -309,7 +363,9 @@ function FormularioProducto({
   cancelar?: () => void;
 }) {
   const [datos, setDatos] = useState({
-    nombre: producto?.nombre ?? "",
+    // Con tamaño (D118), «Nombre» es el del producto entero y el tamaño va aparte.
+    nombre: producto?.grupo ?? producto?.nombre ?? "",
+    tamano: producto?.tamano ?? "",
     categoria: producto?.categoria ?? categoriasDe(producto?.tipo ?? "VENTA")[0] ?? "",
     tipo: producto?.tipo ?? ("VENTA" as TipoProducto),
     rendimientoReceta: producto?.rendimientoReceta ?? "",
@@ -333,8 +389,12 @@ function FormularioProducto({
     setGuardando(true);
     setError(null);
     try {
+      const tamano = esVenta ? datos.tamano.trim() : "";
       await guardar({
         ...datos,
+        nombre: datos.nombre.trim(),
+        grupo: tamano ? datos.nombre.trim() : null,
+        tamano: tamano || null,
         rendimientoReceta: normalizarNumero(datos.rendimientoReceta),
         precioVenta: esVenta && datos.precioVenta.trim() ? normalizarNumero(datos.precioVenta) : null,
         unidadesPorVenta: esVenta ? normalizarNumero(datos.unidadesPorVenta) : "1",
@@ -351,9 +411,17 @@ function FormularioProducto({
     <>
       {error && <Aviso tipo="error">{error}</Aviso>}
       <div className="formulario recetas__datos">
-        <Campo etiqueta="Nombre">
+        <Campo
+          etiqueta="Nombre"
+          ayuda={producto?.grupo ? "Es el nombre de todos sus tamaños: si lo cambias, cambia en todos" : undefined}
+        >
           <input value={datos.nombre} onChange={(e) => cambiar("nombre", e.target.value)} />
         </Campo>
+        {esVenta && (
+          <Campo etiqueta="Tamaño o porción" ayuda="Opcional. Ej.: 8 personas, paquete de 12">
+            <input value={datos.tamano} onChange={(e) => cambiar("tamano", e.target.value)} placeholder="Sin tamaño" />
+          </Campo>
+        )}
         <Campo etiqueta="Categoría">
           {/* Las que ya existen (D63); «Nueva categoría…» deja escribir otra. */}
           {nuevaCategoria ? (
@@ -446,6 +514,7 @@ function FormularioProducto({
           className="boton boton-primario"
           disabled={
             guardando ||
+            !datos.nombre.trim() ||
             !datos.categoria.trim() ||
             !esNumeroValido(datos.rendimientoReceta) ||
             (esVenta && !(esNumeroValido(datos.unidadesPorVenta) && Number(normalizarNumero(datos.unidadesPorVenta)) > 0))
@@ -462,6 +531,136 @@ function FormularioProducto({
         {guardado && producto && <span className="positivo">Guardado ✓</span>}
       </div>
     </>
+  );
+}
+
+// ---------- Tamaños (D118) ----------
+
+// Los tamaños del producto (cada uno con su precio y su margen; tocar uno abre su receta) y «Agregar tamaño»:
+// copia la receta de este tamaño multiplicada (el empaque no) con el precio nuevo.
+function TamanosDelProducto({
+  producto,
+  hermanos,
+  elegir,
+  alCambiar,
+}: {
+  producto: Producto;
+  hermanos: Producto[];
+  elegir: (id: number) => void;
+  alCambiar: () => Promise<void>;
+}) {
+  const [agregando, setAgregando] = useState(false);
+  const [tamano, setTamano] = useState("");
+  const [actual, setActual] = useState("");
+  const [precio, setPrecio] = useState("");
+  const [factor, setFactor] = useState("");
+  const [factorTocado, setFactorTocado] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
+  const base = producto.tamano ?? actual;
+  // El factor se propone solo con los números de los tamaños: de 8 a 15 personas → 1,875.
+  const sugerido = factorEntre(base, tamano);
+  const factorUsado = factorTocado ? factor : sugerido !== null ? String(sugerido).replace(".", ",") : factor;
+  const puede =
+    tamano.trim() !== "" &&
+    (producto.tamano !== null || actual.trim() !== "") &&
+    esNumeroValido(precio) &&
+    esNumeroValido(factorUsado) &&
+    Number(normalizarNumero(factorUsado)) > 0;
+
+  const crear = async () => {
+    setGuardando(true);
+    setError(null);
+    try {
+      const nuevo = await api.agregarTamano(producto.id, {
+        tamano: tamano.trim(),
+        precioVenta: normalizarNumero(precio),
+        factor: normalizarNumero(factorUsado),
+        ...(producto.tamano ? {} : { tamanoActual: actual.trim() }),
+      });
+      await alCambiar();
+      elegir(nuevo.id);
+    } catch (e) {
+      setError(mensajeDeError(e));
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="recetas__tamanos">
+      <div className="recetas__tamanos-cabecera">
+        <span className="campo-etiqueta">{hermanos.length > 1 ? `Tamaños de ${producto.grupo}` : "Tamaños"}</span>
+        {!agregando && (
+          <button className="boton boton-chico" onClick={() => setAgregando(true)}>
+            + Agregar tamaño
+          </button>
+        )}
+      </div>
+      {hermanos.length > 1 ? (
+        <div className="recetas__tamanos-lista" role="list">
+          {hermanos.map((h) => (
+            <button
+              key={h.id}
+              role="listitem"
+              className={`recetas__tamano ${h.id === producto.id ? "recetas__tamano--actual" : ""}`}
+              onClick={() => elegir(h.id)}
+              aria-current={h.id === producto.id ? "true" : undefined}
+            >
+              <strong>{h.tamano}</strong>
+              <span>{bs(h.precioVenta)}</span>
+              <span className={h.gananciaUnitaria !== null && Number(h.gananciaUnitaria) < 0 ? "negativo" : "secundario"}>
+                {porcentaje(h.margenPorcentaje)}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="secundario recetas__tamanos-nota">
+          Un solo tamaño. Si lo vendes en varios (2, 8 o 15 personas; paquete de 6 o de 12), agrégalos aquí: cada uno tiene su precio y su
+          receta, y en la Caja se elige el tamaño en el pedido.
+        </p>
+      )}
+      {agregando && (
+        <div className="recetas__tamano-nuevo">
+          {error && <Aviso tipo="error">{error}</Aviso>}
+          <div className="formulario">
+            {!producto.tamano && (
+              <Campo etiqueta="Tamaño de esta receta" ayuda="Cómo se llama el que ya tienes. Ej.: 4 personas">
+                <input value={actual} onChange={(e) => setActual(e.target.value)} autoFocus />
+              </Campo>
+            )}
+            <Campo etiqueta="Tamaño nuevo" ayuda="Ej.: 15 personas, paquete de 12">
+              <input value={tamano} onChange={(e) => setTamano(e.target.value)} autoFocus={producto.tamano !== null} />
+            </Campo>
+            <Campo etiqueta="Precio de venta (Bs)">
+              <input inputMode="decimal" value={precio} onChange={(e) => setPrecio(e.target.value)} />
+            </Campo>
+            <Campo
+              etiqueta="La receta se multiplica por"
+              ayuda={`Respecto a ${base || "este tamaño"}. El empaque no se multiplica.`}
+            >
+              <input
+                inputMode="decimal"
+                value={factorUsado}
+                onChange={(e) => {
+                  setFactorTocado(true);
+                  setFactor(e.target.value);
+                }}
+              />
+            </Campo>
+          </div>
+          <div className="fila-botones" style={{ marginTop: 10 }}>
+            <button className="boton boton-primario" disabled={!puede || guardando} onClick={() => void crear()}>
+              {guardando ? "Creando…" : "Crear tamaño"}
+            </button>
+            <button className="boton" onClick={() => setAgregando(false)}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -503,6 +702,8 @@ function DetalleProducto({
   intermedios,
   categoriasDe,
   alCambiar,
+  hermanos,
+  elegir,
   alBorrar,
 }: {
   producto: Producto;
@@ -510,6 +711,8 @@ function DetalleProducto({
   intermedios: Producto[];
   categoriasDe: (tipo: TipoProducto) => string[];
   alCambiar: () => Promise<void>;
+  hermanos: Producto[]; // sus tamaños, él incluido (D118)
+  elegir: (id: number) => void;
   alBorrar: (mensaje: string) => Promise<void>;
 }) {
   const [confirmarBorrado, setConfirmarBorrado] = useState(false);
@@ -675,6 +878,7 @@ function DetalleProducto({
               await alCambiar(); // "Guardado" aparece cuando los costos ya están actualizados
             }}
           />
+          {producto.tipo === "VENTA" && <TamanosDelProducto producto={producto} hermanos={hermanos} elegir={elegir} alCambiar={alCambiar} />}
         </div>
       </Panel>
 

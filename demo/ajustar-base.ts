@@ -12,6 +12,11 @@ async function main() {
     create: { clave: "agente.whatsapp", valor: "apagado" },
     update: { valor: "apagado" },
   });
+  await prisma.configuracion.upsert({
+    where: { clave: "negocio.nombre" },
+    create: { clave: "negocio.nombre", valor: "Dulzura Pastelería" },
+    update: { valor: "Dulzura Pastelería" },
+  });
   await prisma.$executeRawUnsafe("VACUUM");
   console.log("Base de la demo ajustada.");
 }

@@ -1,0 +1,90 @@
+/* Ventas de antes del ERP (D121). */
+.anteriores {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: var(--space-3);
+}
+
+.anteriores__ayuda,
+.anteriores__resumen {
+  margin: 0;
+  font-size: 13px;
+}
+
+.anteriores__tabla input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+}
+
+.anteriores__tabla td {
+  vertical-align: top;
+}
+
+.anteriores__tabla {
+  width: 100%;
+}
+
+.anteriores__tabla td:nth-child(1) {
+  width: 150px;
+}
+
+.anteriores__tabla td:nth-child(2) {
+  min-width: 200px;
+}
+
+.anteriores__tabla td:nth-child(5) {
+  min-width: 130px;
+}
+
+.anteriores__numero {
+  max-width: 84px;
+  text-align: right;
+}
+
+.anteriores__detalle {
+  min-height: 16px;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.anteriores__mala td {
+  background: var(--color-error-soft);
+}
+
+.anteriores__pie {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.anteriores__pasos {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.anteriores__pasos .boton {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.anteriores__subir {
+  cursor: pointer;
+}
+
+.anteriores__subir input {
+  display: none;
+}
+
+.anteriores__vista {
+  max-height: 320px;
+  overflow: auto;
+}

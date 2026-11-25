@@ -1,6 +1,7 @@
-import { MdMenu, MdOutlineDarkMode, MdOutlineLightMode, MdOutlineLock, MdOutlinePassword } from "react-icons/md";
+import { MdMenu, MdOutlineDarkMode, MdOutlineEdit, MdOutlineLightMode, MdOutlineLock, MdOutlinePassword } from "react-icons/md";
 import type { Tema } from "../../hooks/useTema";
 import { EN_DEMO } from "../../demo";
+import { inicialNegocio, useNombreNegocio } from "../../negocio";
 import "./Topbar.css";
 
 export function Topbar({
@@ -10,6 +11,7 @@ export function Topbar({
   abrirMenu,
   bloquear,
   cambiarPin,
+  editarNombre,
 }: {
   titulo: string;
   tema: Tema;
@@ -17,7 +19,9 @@ export function Topbar({
   abrirMenu: () => void;
   bloquear: () => void;
   cambiarPin: () => void;
+  editarNombre: () => void;
 }) {
+  const nombre = useNombreNegocio();
   const fecha = new Date().toLocaleDateString("es-BO", { weekday: "long", day: "numeric", month: "long" });
   const esOscuro = tema === "dark";
   return (
@@ -26,7 +30,9 @@ export function Topbar({
         <MdMenu />
       </button>
       <div className="topbar__titulo">
-        <span className="topbar__ruta">Dulzura Pastelería / {titulo}</span>
+        <span className="topbar__ruta">
+          {nombre} / {titulo}
+        </span>
         <span className="topbar__pagina">{titulo}</span>
       </div>
       <div className="topbar__derecha">
@@ -50,15 +56,24 @@ export function Topbar({
             </button>
           </>
         )}
-        <div className="topbar__perfil">
+        {/* Nombre del negocio (D117): la dueña lo cambia tocándolo. */}
+        <button
+          type="button"
+          className="topbar__perfil"
+          onClick={editarNombre}
+          disabled={EN_DEMO}
+          title={EN_DEMO ? nombre : "Cambiar el nombre del negocio"}
+          aria-label={`${nombre}. Cambiar el nombre del negocio`}
+        >
           <span className="topbar__avatar" aria-hidden>
-            D
+            {inicialNegocio(nombre)}
           </span>
           <span className="topbar__perfil-texto">
-            <strong>Dulzura Pastelería</strong>
-            <span>Administración</span>
+            <strong>{nombre}</strong>
+            <span>{EN_DEMO ? "Administración" : "Cambiar nombre"}</span>
           </span>
-        </div>
+          {!EN_DEMO && <MdOutlineEdit className="topbar__perfil-editar" aria-hidden />}
+        </button>
       </div>
     </header>
   );

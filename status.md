@@ -602,4 +602,27 @@ Decisión D44. Sin migración (el celular ya existía en `Cliente`).
 
 - [x] Modo demo: base de ejemplo armada desde cero, sin PIN, sin correo ni avisos en vivo, aviso «Demo» en pantalla.
 - [x] `vercel.json` + función `api/index.ts`; probado simulando Vercel en la PC (pantalla, pedidos, respaldo, Excel). 126/126 tests.
-- [ ] Desplegar en Vercel (cuenta del usuario) y revisar la URL.
+- [x] Desplegada en https://bakery-erp-whatsapp.vercel.app (18-11-2026): pantalla, pedidos, Excel y respaldo funcionan; el correo queda bloqueado.
+
+## Pastelería Rainbow (D115) y descargas del Historial (D116)
+
+- [x] Base real limpia de la repostera anterior y con el catálogo Rainbow (107 productos, 38 masas/rellenos, 58 insumos). Respaldo previo: `backups/dulzura_2026-11-25_14-51-55.db.gz`.
+- [x] Historial de ventas: botones Excel, Word y PDF de la lista filtrada. 128/128 tests.
+- [ ] La dueña corrige precios de insumos y cantidades de las recetas (son inventados).
+- [x] Nombre del negocio editable por la dueña (D117); la base real dice «Pastelería Rainbow».
+- [x] Ventana de Cambiar PIN con márgenes y angosta.
+- [x] Git recuperado desde GitHub (la carpeta `.git` había desaparecido); los cambios locales quedaron intactos.
+- [ ] Decidir si la demo de Vercel y el seed de los tests pasan al catálogo Rainbow.
+
+## Tamaños de un producto (D118)
+
+- [x] `grupo` y `tamano` en Producto (migración aplicada a la base real tras respaldo): 107 productos → 36 con tamaños.
+- [x] Caja: un botón por producto y el tamaño se elige en el pedido. Recetas: tamaños agrupados y «Agregar tamaño».
+- [x] 131/131 tests; probado en el navegador sobre una copia.
+- [x] Caja (D119): tarjetas con «− n +» (tocar suma, «−» resta), «+ Otro tamaño» en el pedido, todo el ancho y nombres completos.
+- [x] Todo el ERP a pantalla completa y lista de Recetas más ancha (D120).
+- [x] Ventas de antes del ERP (D121): «+ Agregar ventas anteriores» en el Historial, una por una o con plantilla de Excel. 133/133 tests.
+- [x] Cada compra actualiza el precio del insumo, también por cantidad (D122).
+- [x] La barra de arriba ya no salta al aparecer la barra de deslizar (D123).
+- [x] Reporte impreso/PDF compacto en una hoja A4 (D124).
+- [x] Ventanas de Respaldo por correo y de Actualización con márgenes; el correo dice «ERP <nombre del negocio>».

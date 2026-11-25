@@ -17,13 +17,16 @@ export async function registrarCompra(
     descripcion?: string;
     nota?: string; // nota del movimiento de stock
     fecha?: Date;
-    actualizarPrecio?: boolean; // con envases: el precio del envase pasa a monto / envases
+    // El precio del envase pasa al de esta compra (D122): con envases, monto / envases; por cantidad,
+    // monto / cantidad × contenido del envase. En Bolivia los precios cambian seguido: así el costo de las recetas sigue al día.
+    actualizarPrecio?: boolean;
   },
 ) {
   const { insumo, envases, monto, fecha } = datos;
   const comprado = datos.cantidad ?? insumo.contenidoEnvase.mul(envases ?? 0);
-  if (envases && datos.actualizarPrecio && monto.gt(0)) {
-    await tx.insumo.update({ where: { id: insumo.id }, data: { precioEnvase: monto.div(envases).toDecimalPlaces(4) } });
+  if (datos.actualizarPrecio && monto.gt(0) && comprado.gt(0)) {
+    const precioEnvase = envases ? monto.div(envases) : monto.div(comprado).mul(insumo.contenidoEnvase);
+    await tx.insumo.update({ where: { id: insumo.id }, data: { precioEnvase: precioEnvase.toDecimalPlaces(4) } });
   }
   const detalle = envases ? `${envases.toString()} envase(s)` : `${comprado.toString()} ${insumo.unidadBase.toLowerCase()}`;
   // «No llevar stock» (D40): el gasto se guarda, pero el stock no se toca.

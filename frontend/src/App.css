@@ -5,10 +5,10 @@
   flex-direction: column;
 }
 
+/* Todas las pantallas usan el ancho completo (D120): antes se cortaban en 1400 px y en monitores anchos sobraba espacio. */
 .app__contenido {
   padding: var(--space-4);
   width: 100%;
-  max-width: 1400px;
 }
 
 .cabecera-pantalla {

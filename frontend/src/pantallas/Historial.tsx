@@ -1,10 +1,12 @@
 import { Fragment, useMemo, useState, type FormEvent } from "react";
-import { MdChevronLeft, MdChevronRight, MdDeleteOutline, MdOutlineEdit } from "react-icons/md";
-import { api, mensajeDeError, type TipoCliente } from "../api";
+import { MdChevronLeft, MdChevronRight, MdDeleteOutline, MdOutlineEdit, MdOutlineFileDownload } from "react-icons/md";
+import { api, mensajeDeError, type FormatoDescarga, type TipoCliente } from "../api";
 import { BarChart, type Barra } from "../components/charts/BarChart";
 import { bs, cantidad, esNumeroValido, fechaCorta, hora, hoyISO, nombreCorto, normalizarNumero } from "../formato";
 import { Aviso, Button, Campo, Cargando, Panel, Tarjeta, TipoClienteBadge, useDatos } from "../ui";
 import { tomarDia } from "../compraPendiente";
+import { useNombreNegocio } from "../negocio";
+import { VentasAnteriores } from "./VentasAnteriores";
 import "./Historial.css";
 
 const TODOS = "";
@@ -122,6 +124,8 @@ export function Historial({ vista = "ventas" }: { vista?: Vista }) {
   const anios = Array.from({ length: anioActual - PRIMER_ANIO + 1 }, (_, i) => anioActual - i);
   const [anio, setAnio] = useState(anioActual);
   const error = caja.error ?? anteriores.error;
+  const [agregando, setAgregando] = useState(false); // ventas de antes del ERP (D121)
+  const [avisoAnteriores, setAvisoAnteriores] = useState<string | null>(null);
 
   return (
     <>
@@ -134,6 +138,9 @@ export function Historial({ vista = "ventas" }: { vista?: Vista }) {
               : "Cada venta del año, con filtros. Junta lo vendido en la Caja con lo anotado antes del sistema."}
           </p>
         </div>
+        <div className="historial__cabecera-acciones">
+        {/* Ventas de antes del ERP (D121): una por una o desde la plantilla de Excel. */}
+        <Button onClick={() => setAgregando(true)}>+ Agregar ventas anteriores</Button>
         {/* Dos clics: abrir la lista y elegir el año. */}
         <label className="historial__anio">
           <span className="secundario">Año</span>
@@ -153,8 +160,21 @@ export function Historial({ vista = "ventas" }: { vista?: Vista }) {
             })}
           </select>
         </label>
+        </div>
       </div>
       {error && <Aviso tipo="error">{error}</Aviso>}
+      {avisoAnteriores && <Aviso tipo="ok">{avisoAnteriores}</Aviso>}
+      {agregando && (
+        <VentasAnteriores
+          cerrar={() => setAgregando(false)}
+          listo={async (anioNuevo, texto) => {
+            await Promise.all([caja.recargar(), anteriores.recargar()]);
+            setAgregando(false);
+            setAnio(anioNuevo);
+            setAvisoAnteriores(texto);
+          }}
+        />
+      )}
       {!filas ? (
         <Cargando />
       ) : (
@@ -167,6 +187,7 @@ export function Historial({ vista = "ventas" }: { vista?: Vista }) {
           alCambiar={async () => {
             await Promise.all([caja.recargar(), anteriores.recargar()]);
           }}
+          agregarAnteriores={() => setAgregando(true)}
         />
       )}
     </>
@@ -181,13 +202,16 @@ function ResumenAnio({
   filas,
   todas,
   alCambiar,
+  agregarAnteriores,
 }: {
   vista: Vista;
   anio: number;
   filas: Fila[];
   todas: Fila[]; // todos los años: la semana puede cruzar el año
   alCambiar: () => Promise<void>;
+  agregarAnteriores: () => void;
 }) {
+  const negocio = useNombreNegocio();
   const hoy = hoyISO();
   // Selección de Desempeño (D82): un mes (muestra sus ventas en la tabla) y, dentro, un día.
   // Al entrar quedan elegidos el mes y el día de hoy (D84), o el día tocado en el Inicio (D72) con su mes.
@@ -215,7 +239,23 @@ function ResumenAnio({
 
   const vigentes = filas.filter((f) => !f.anulada);
   if (filas.length === 0) {
-    return <Aviso tipo="alerta">No hay ventas registradas en {anio}.</Aviso>;
+    return (
+      <div className="historial__vacio">
+        <Aviso tipo="alerta">No hay ventas registradas en {anio}.</Aviso>
+        {/* D121: lo primero que hace una dueña nueva es cargar lo que vendió antes. */}
+        <Panel titulo="¿Vendías antes de usar el ERP?">
+          <div className="panel-cuerpo historial__vacio-cuerpo">
+            <p>
+              Agrega tus ventas anteriores para verlas aquí y en Desempeño: <strong>una por una</strong> (fecha, producto, cantidad y
+              total) o <strong>desde Excel</strong> con la plantilla del ERP. No cambian el stock ni la Caja.
+            </p>
+            <Button variante="primario" onClick={agregarAnteriores}>
+              + Agregar ventas anteriores
+            </Button>
+          </div>
+        </Panel>
+      </div>
+    );
   }
 
   // Las tarjetas son del año; «Por producto» sigue al día o mes que se toque en los gráficos (D68).
@@ -825,10 +865,79 @@ function ResumenAnio({
               </select>
             </Campo>
           </div>
+          <DescargarVentas
+            filas={filtradas}
+            titulo={`${negocio} · Historial de ventas ${anio}`}
+            archivo={`historial_de_ventas_${anio}`}
+            filtros={[
+              mes === TODOS ? "Todo el año" : `Mes: ${MESES[Number(mes)]}`,
+              tipo === "TODAS" ? "Todas las ventas" : tipo === "MAYORISTA" ? "Solo mayoristas" : "Solo minoristas",
+              cliente === TODOS ? null : `Cliente: ${cliente}`,
+              producto === TODOS ? null : `Producto: ${producto}`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          />
           {tablaVentas(filtradas, "No hay ventas con estos filtros.")}
         </Panel>
       )}
     </>
+  );
+}
+
+// Descargar lo que se ve (D116): la lista con los filtros elegidos, en Excel, Word o PDF.
+const FORMATOS: { formato: FormatoDescarga; texto: string }[] = [
+  { formato: "xlsx", texto: "Excel" },
+  { formato: "docx", texto: "Word" },
+  { formato: "pdf", texto: "PDF" },
+];
+
+function DescargarVentas({ filas, titulo, archivo: nombreArchivo, filtros }: { filas: Fila[]; titulo: string; archivo: string; filtros: string }) {
+  const [bajando, setBajando] = useState<FormatoDescarga | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const descargar = async (formato: FormatoDescarga) => {
+    setBajando(formato);
+    setError(null);
+    try {
+      const archivo = await api.exportarVentas(formato, {
+        titulo,
+        filtros,
+        filas: filas.map((f) => ({
+          fecha: f.fecha.toISOString(),
+          conHora: f.deCaja,
+          producto: f.producto,
+          cliente: f.cliente,
+          mayorista: esMayorista(f),
+          cantidad: f.cantidad,
+          total: f.total,
+          ganancia: f.ganancia,
+          anulada: f.anulada,
+        })),
+      });
+      const url = URL.createObjectURL(archivo);
+      const enlace = document.createElement("a");
+      enlace.href = url;
+      enlace.download = `${nombreArchivo}.${formato}`;
+      enlace.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      setError(mensajeDeError(e));
+    } finally {
+      setBajando(null);
+    }
+  };
+
+  return (
+    <div className="historial__descargar">
+      <span className="secundario">Descargar esta lista:</span>
+      {FORMATOS.map(({ formato, texto }) => (
+        <Button key={formato} tamano="chico" onClick={() => void descargar(formato)} disabled={bajando !== null || filas.length === 0}>
+          <MdOutlineFileDownload aria-hidden /> {bajando === formato ? "Preparando…" : texto}
+        </Button>
+      ))}
+      {error && <Aviso tipo="error">{error}</Aviso>}
+    </div>
   );
 }
 

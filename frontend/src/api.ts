@@ -20,7 +20,9 @@ export interface Insumo {
 
 export interface Producto {
   id: number;
-  nombre: string;
+  nombre: string; // con tamaño: «grupo · tamaño» (D118)
+  grupo: string | null; // «Torta Matilda de quinua»: lo comparten todos sus tamaños
+  tamano: string | null; // «15 personas»
   categoria: string;
   tipo: TipoProducto;
   rendimientoReceta: string;
@@ -152,6 +154,8 @@ export interface DatosInsumo {
 
 export interface DatosProducto {
   nombre: string;
+  grupo?: string | null; // D118
+  tamano?: string | null;
   categoria: string;
   tipo: TipoProducto;
   rendimientoReceta: string;
@@ -265,6 +269,40 @@ export interface ListaGastos {
 }
 
 export type TipoCliente = "MINORISTA" | "MAYORISTA";
+
+// Ventas de antes del ERP (D121).
+export interface VentaAnterior {
+  fecha: string; // AAAA-MM-DD
+  producto: string;
+  cantidad: number;
+  total: number;
+  cliente?: string | null;
+}
+export interface VentaAnteriorRevisada extends VentaAnterior {
+  numero: number;
+  productoId: number | null;
+  productoNombre: string;
+  costo: number | null;
+  error: string | null;
+}
+
+// Descarga del Historial de ventas (D116).
+export type FormatoDescarga = "xlsx" | "docx" | "pdf";
+export interface ListaParaDescargar {
+  titulo: string;
+  filtros: string;
+  filas: {
+    fecha: string;
+    conHora: boolean;
+    producto: string;
+    cliente: string | null;
+    mayorista: boolean;
+    cantidad: number;
+    total: number;
+    ganancia: number | null;
+    anulada: boolean;
+  }[];
+}
 
 export interface Cliente {
   id: string;
@@ -546,12 +584,29 @@ export const api = {
   salir: () => pedir<void>("POST", "/sesion/salir"),
   anotarActividad: () => pedir<void>("POST", "/sesion/actividad"),
   cambiarPin: (actual: string, nuevo: string) => pedir<{ ok: boolean }>("PUT", "/sesion/pin", { actual, nuevo }),
+  guardarNombreNegocio: (nombre: string) => pedir<{ nombre: string }>("PUT", "/negocio", { nombre }), // D117
 
   // ---------- Reportes (D106) ----------
   reporte: (desde: string, hasta: string) =>
     pedir<Reporte>("GET", `/reportes?${new URLSearchParams({ desde, hasta }).toString()}`),
   reporteExcel: async (desde: string, hasta: string): Promise<Blob> => {
     const respuesta = await fetch(`/api/reportes/excel?${new URLSearchParams({ desde, hasta }).toString()}`).catch(() => {
+      throw new ApiError("No se pudo conectar con el servidor. ¿Está encendida la API?", 0);
+    });
+    if (!respuesta.ok) {
+      const error = ((await respuesta.json().catch(() => null)) ?? {}) as CuerpoError;
+      if (respuesta.status === 401 && error.sesion === "bloqueado") window.dispatchEvent(new Event(EVENTO_BLOQUEADO));
+      throw new ApiError(error.error ?? `Error ${respuesta.status}`, respuesta.status, error.detalles ?? []);
+    }
+    return respuesta.blob();
+  },
+  // Historial de ventas en Excel, Word o PDF (D116): se manda la lista que se está viendo.
+  exportarVentas: async (formato: FormatoDescarga, lista: ListaParaDescargar): Promise<Blob> => {
+    const respuesta = await fetch(`/api/exportar/ventas?formato=${formato}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(lista),
+    }).catch(() => {
       throw new ApiError("No se pudo conectar con el servidor. ¿Está encendida la API?", 0);
     });
     if (!respuesta.ok) {
@@ -577,6 +632,9 @@ export const api = {
   },
   crearProducto: (datos: DatosProducto) => pedir<Producto>("POST", "/productos", datos),
   actualizarProducto: (id: number, datos: Partial<DatosProducto>) => pedir<Producto>("PATCH", `/productos/${id}`, datos),
+  // Agregar un tamaño (D118): copia la receta multiplicada por `factor` (el empaque no se multiplica).
+  agregarTamano: (id: number, datos: { tamano: string; precioVenta: string; factor: string; tamanoActual?: string }) =>
+    pedir<Producto>("POST", `/productos/${id}/tamanos`, datos),
   // Borra la receta (D63); si el producto tiene ventas, estas siguen en el Historial (conservaVentas).
   borrarProducto: (id: number) => pedir<{ borrado: number; conservaVentas: boolean }>("DELETE", `/productos/${id}`),
   // Borra todas las recetas de una categoría (D64); antes hace un respaldo.
@@ -617,6 +675,13 @@ export const api = {
   editarHistorico: (id: number, datos: { fecha?: string; cantidad?: string; valor?: string }) =>
     pedir<VentaHistorica>("PATCH", `/historico/${id}`, datos),
   eliminarHistorico: (id: number) => pedir<{ eliminada: number }>("DELETE", `/historico/${id}`),
+  // Ventas de antes del ERP (D121): una por una, o con la plantilla de Excel (primero se revisa, después se importa).
+  anotarVentasAnteriores: (ventas: VentaAnterior[]) =>
+    pedir<{ guardadas: number; sinReceta: number }>("POST", "/historico/anotar", { ventas }),
+  revisarExcelAnterior: (nombre: string, archivo: string) =>
+    pedir<{ filas: VentaAnteriorRevisada[] }>("POST", "/historico/importar?probar=1", { nombre, archivo }),
+  importarExcelAnterior: (nombre: string, archivo: string) =>
+    pedir<{ guardadas: number; saltadas: number; sinReceta: number }>("POST", "/historico/importar", { nombre, archivo }),
   eliminarPedidoHistorico: (id: number) => pedir<{ eliminadas: number }>("DELETE", `/historico/${id}/pedido`),
   historico: (desde?: string, hasta?: string) =>
     pedir<Historico>("GET", `/historico${desde && hasta ? `?desde=${desde}&hasta=${hasta}` : ""}`),

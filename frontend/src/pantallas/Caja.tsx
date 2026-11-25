@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useState } from "react";
 import { MdOutlineDeliveryDining, MdOutlineStorefront } from "react-icons/md";
 import { api, mensajeDeError, type Cliente, type MetodoPago, type Producto, type TipoCliente, type TipoEntrega } from "../api";
 import { bs, cantidad, diaLargo, esNumeroValido, hoyISO, nombreCorto, normalizarNumero } from "../formato";
@@ -6,6 +6,7 @@ import { nombreDia, nombreMetodo } from "../pedidos";
 import { Aviso, BuscadorCliente, Button, Campo, Cargando, Opciones, Panel, TipoClienteBadge, mismoNombre, useDatos } from "../ui";
 import { precioParaCliente } from "../precios";
 import { guardarUltimaVenta } from "../ultimaVenta";
+import { agruparTamanos, ordenarTamanos, type ConTamanos } from "../tamanos";
 import "./Caja.css";
 
 // Caja por pedido (D48): primero la familia (Queques, Flanes…), después los sabores de esa familia
@@ -49,6 +50,9 @@ export function Caja() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
+  // «Ya están todos los tamaños» (D118): se va solo en cuanto cambia el pedido.
+  const [avisoTamanos, setAvisoTamanos] = useState<string | null>(null);
+  useEffect(() => setAvisoTamanos(null), [lineas]);
 
   const clienteSel: Cliente | null =
     clientes.datos?.find((c) => c.id === clienteId) ??
@@ -77,6 +81,34 @@ export function Caja() {
       f,
     );
   const lineaDe = (id: number) => lineas.find((l) => l.productoId === id);
+  // Tamaños (D118): un botón por producto; el tamaño se elige en el pedido.
+  const tamanosDe = (p: Producto) => (p.grupo ? ordenarTamanos(aLaVenta.filter((x) => x.grupo === p.grupo && x.categoria === p.categoria)) : [p]);
+  const agregarTamano = (g: ConTamanos) => {
+    const libre = g.tamanos.find((t) => !lineaDe(t.id));
+    if (!libre) {
+      setAvisoTamanos(`Ya están todos los tamaños de ${g.nombre} en el pedido: cambia la cantidad abajo.`);
+      return;
+    }
+    setError(null);
+    setLineas((actuales) => [...actuales, { productoId: libre.id, cantidad: "1", precio: precioDe(libre).precio ?? "" }]);
+  };
+  const cambiarTamano = (deId: number, aId: number) => {
+    const nuevo = porId.get(aId);
+    if (!nuevo || lineaDe(aId)) return;
+    setLineas((actuales) => actuales.map((l) => (l.productoId === deId ? { ...l, productoId: aId, precio: precioDe(nuevo).precio ?? "" } : l)));
+  };
+  // Tarjetas (D119): las líneas del producto en el pedido (todos sus tamaños), sumar y restar desde la tarjeta.
+  const lineasDe = (g: ConTamanos) => lineas.filter((l) => g.tamanos.some((t) => t.id === l.productoId));
+  const unidadesDe = (g: ConTamanos) => lineasDe(g).reduce((t, l) => t + (Number(l.cantidad) || 0), 0);
+  const masUno = (g: ConTamanos) => {
+    const ultima = lineasDe(g).at(-1);
+    if (ultima) sumar(ultima.productoId, 1);
+    else agregarTamano(g);
+  };
+  const menosUno = (g: ConTamanos) => {
+    const ultima = lineasDe(g).at(-1);
+    if (ultima) sumar(ultima.productoId, -1);
+  };
   const enPedido = (f: string) => lineas.filter((l) => porId.get(l.productoId)?.categoria === f).length;
 
   // ---------- pedido ----------
@@ -238,13 +270,6 @@ export function Caja() {
     }
   };
 
-  const teclaFila = (e: KeyboardEvent, p: Producto) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      alternar(p);
-    }
-  };
-
   return (
     <>
       <div className="cabecera-pantalla">
@@ -280,7 +305,7 @@ export function Caja() {
                             >
                               <span className="caja-familia__nombre">{f}</span>
                               <span className={`caja-familia__detalle ${cuantos ? "caja-familia__detalle--pedido" : ""}`}>
-                                {cuantos ? `${cuantos} en el pedido` : `${delaFamilia(f).length} producto(s)`}
+                                {cuantos ? `${cuantos} en el pedido` : `${agruparTamanos(delaFamilia(f)).length} producto(s)`}
                               </span>
                             </button>
                           );
@@ -293,58 +318,67 @@ export function Caja() {
                         role="list"
                         aria-label={`Productos de ${familia}`}
                         style={{
-                          gridTemplateRows: `repeat(${Math.ceil(delaFamilia(familia).length / 2)}, auto)`,
+                          gridTemplateRows: `repeat(${Math.ceil(agruparTamanos(delaFamilia(familia)).length / 2)}, auto)`,
                         }}
                       >
-                        {delaFamilia(familia).map((p) => {
-                          const linea = lineaDe(p.id);
-                          const { precio } = precioDe(p);
+                        {agruparTamanos(delaFamilia(familia)).map((g) => {
+                          // Tarjetas (D119): tocar en cualquier lado suma uno; «−» resta uno. Con tamaños (D118) suma al
+                          // último tamaño elegido en el pedido (o agrega el primero); otro tamaño se agrega en el pedido.
+                          const sola = g.tamanos.length === 1 ? (g.tamanos[0] as Producto) : null;
+                          const linea = sola ? lineaDe(sola.id) : undefined;
+                          const unidades = unidadesDe(g);
+                          const precios = g.tamanos.map((t) => Number(precioDe(t).precio ?? 0));
                           return (
                             <div
-                              key={p.id}
+                              key={g.clave}
                               role="listitem"
                               tabIndex={0}
-                              className={`caja-sabor ${linea ? "caja-sabor--elegido" : ""}`}
-                              onClick={() => alternar(p)}
-                              onKeyDown={(e) => teclaFila(e, p)}
-                              aria-label={`${p.nombre}${linea ? `, ${linea.cantidad} en el pedido` : ""}`}
+                              className={`caja-sabor ${unidades ? "caja-sabor--elegido" : ""}`}
+                              onClick={() => masUno(g)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  masUno(g);
+                                }
+                              }}
+                              aria-label={`${g.nombre}${sola ? "" : `, ${g.tamanos.length} tamaños`}${unidades ? `, ${unidades} en el pedido` : ""}. Tocar suma uno.`}
                             >
-                              {/* Arriba: nombre y precio; abajo: costo y cantidad. */}
-                              <span className="caja-sabor__nombre" title={p.nombre}>
-                                {nombreCorto(p.nombre, familia)}
+                              {/* Arriba: nombre y precio; abajo: costo (o tamaños) y cantidad. */}
+                              <span className="caja-sabor__nombre" title={g.nombre}>
+                                {nombreCorto(g.nombre, familia)}
                               </span>
-                              <span className="caja-sabor__precio">{bs(precio)}</span>
-                              <span className="caja-sabor__costo">Costo producción {bs(p.costoUnitario)}</span>
-                              {linea ? (
+                              <span className="caja-sabor__precio">
+                                {sola ? bs(precioDe(sola).precio) : `desde ${bs(Math.min(...precios))}`}
+                              </span>
+                              <span className="caja-sabor__costo">
+                                {sola
+                                  ? `Costo producción ${bs(sola.costoUnitario)}`
+                                  : `${g.tamanos.length} tamaños: ${g.tamanos[0]?.tamano} a ${g.tamanos[g.tamanos.length - 1]?.tamano}`}
+                              </span>
+                              {unidades ? (
                                 <span
                                   className="caja-sabor__contador"
                                   onClick={(e) => e.stopPropagation()}
                                   onKeyDown={(e) => e.stopPropagation()}
                                 >
-                                  <button
-                                    className="boton"
-                                    aria-label={`Restar uno de ${p.nombre}`}
-                                    onClick={() => sumar(p.id, -1)}
-                                  >
+                                  <button className="boton" aria-label={`Restar uno de ${g.nombre}`} onClick={() => menosUno(g)}>
                                     −
                                   </button>
-                                  <input
-                                    inputMode="numeric"
-                                    aria-label={`Cantidad de ${p.nombre}`}
-                                    value={linea.cantidad}
-                                    onChange={(e) =>
-                                      cambiarLinea(p.id, {
-                                        cantidad: soloDigitos(e.target.value),
-                                      })
-                                    }
-                                    onBlur={() => alSalirCantidad(p.id)}
-                                    onFocus={(e) => e.target.select()}
-                                  />
-                                  <button
-                                    className="boton"
-                                    aria-label={`Sumar uno de ${p.nombre}`}
-                                    onClick={() => sumar(p.id, 1)}
-                                  >
+                                  {sola && linea ? (
+                                    <input
+                                      inputMode="numeric"
+                                      aria-label={`Cantidad de ${sola.nombre}`}
+                                      value={linea.cantidad}
+                                      onChange={(e) => cambiarLinea(sola.id, { cantidad: soloDigitos(e.target.value) })}
+                                      onBlur={() => alSalirCantidad(sola.id)}
+                                      onFocus={(e) => e.target.select()}
+                                    />
+                                  ) : (
+                                    <span className="caja-sabor__unidades" title="Unidades de este producto en el pedido (todos sus tamaños)">
+                                      {unidades}
+                                    </span>
+                                  )}
+                                  <button className="boton" aria-label={`Sumar uno de ${g.nombre}`} onClick={() => masUno(g)}>
                                     +
                                   </button>
                                 </span>
@@ -425,6 +459,7 @@ export function Caja() {
           <Panel titulo={filas.length ? `Pedido · ${filas.length} producto(s)` : "Pedido"}>
             <div className="panel-cuerpo">
               {error && <Aviso tipo="error">{error}</Aviso>}
+              {avisoTamanos && <p className="secundario caja__cliente-detalle">{avisoTamanos}</p>}
               {filas.length === 0 ? (
                 <p className="secundario">Toca los sabores de la izquierda: cada uno entra al pedido.</p>
               ) : (
@@ -432,10 +467,58 @@ export function Caja() {
                   <ul className="caja-lineas">
                     {filas.map((f) => (
                       <li key={f.productoId} className="caja-linea">
-                        <span className="caja-linea__nombre">
-                          {cantidad(f.n)} × {f.producto.nombre}
-                          <span className="caja-sabor__costo">Costo producción {bs(f.costo)}</span>
-                        </span>
+                        {tamanosDe(f.producto).length > 1 ? (
+                          // Tamaños (D118): el producto, su tamaño (los que ya están en otra línea no se repiten) y cuántos.
+                          <span className="caja-linea__nombre">
+                            <span className="caja-linea__producto">{f.producto.grupo}</span>
+                            <span className="caja-linea__tamano">
+                              <select
+                                value={f.productoId}
+                                aria-label={`Tamaño de ${f.producto.grupo}`}
+                                onChange={(e) => cambiarTamano(f.productoId, Number(e.target.value))}
+                              >
+                                {tamanosDe(f.producto).map((t) => (
+                                  <option key={t.id} value={t.id} disabled={t.id !== f.productoId && Boolean(lineaDe(t.id))}>
+                                    {t.tamano}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className="caja-linea__cantidad">
+                                <button className="boton" aria-label={`Restar uno de ${f.producto.nombre}`} onClick={() => sumar(f.productoId, -1)}>
+                                  −
+                                </button>
+                                <input
+                                  inputMode="numeric"
+                                  aria-label={`Cantidad de ${f.producto.nombre}`}
+                                  value={f.cantidad}
+                                  onChange={(e) => cambiarLinea(f.productoId, { cantidad: soloDigitos(e.target.value) })}
+                                  onBlur={() => alSalirCantidad(f.productoId)}
+                                  onFocus={(e) => e.target.select()}
+                                />
+                                <button className="boton" aria-label={`Sumar uno de ${f.producto.nombre}`} onClick={() => sumar(f.productoId, 1)}>
+                                  +
+                                </button>
+                              </span>
+                            </span>
+                            <span className="caja-sabor__costo">Costo producción {bs(f.costo)}</span>
+                            {/* Otro tamaño del mismo producto (D119): en la última línea del producto, si queda alguno. */}
+                            {filas.filter((x) => x.producto.grupo === f.producto.grupo && x.producto.categoria === f.producto.categoria).at(-1)
+                              ?.productoId === f.productoId &&
+                              tamanosDe(f.producto).some((t) => !lineaDe(t.id)) && (
+                                <button
+                                  className="caja-linea__otro-tamano"
+                                  onClick={() => agregarTamano({ clave: "", nombre: f.producto.grupo ?? "", tamanos: tamanosDe(f.producto) })}
+                                >
+                                  + Otro tamaño de {f.producto.grupo}
+                                </button>
+                              )}
+                          </span>
+                        ) : (
+                          <span className="caja-linea__nombre">
+                            {cantidad(f.n)} × {f.producto.nombre}
+                            <span className="caja-sabor__costo">Costo producción {bs(f.costo)}</span>
+                          </span>
+                        )}
                         <label
                           className="caja-linea__precio"
                           title={f.acordado ? "Precio acordado con el cliente" : "Puedes cambiarlo para un descuento"}

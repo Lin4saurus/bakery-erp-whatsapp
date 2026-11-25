@@ -219,13 +219,17 @@
   background: var(--color-primary-soft);
 }
 
+/* El nombre completo, en hasta dos líneas (solo uno muy largo termina en «…»). */
 .caja-sabor__nombre {
   grid-area: nombre;
+  align-self: start;
   font-size: 16px;
   font-weight: 500;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .caja-sabor--elegido .caja-sabor__nombre {
@@ -241,7 +245,9 @@
 
 .caja-sabor__precio {
   grid-area: precio;
+  align-self: start;
   justify-self: end;
+  white-space: nowrap;
   font-weight: 600;
   color: var(--color-primary);
   font-variant-numeric: tabular-nums;
@@ -306,6 +312,72 @@
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* Tamaños en el pedido (D118): el producto arriba; abajo el tamaño y la cantidad. */
+.caja-linea__producto {
+  font-weight: 600;
+}
+
+.caja-linea__tamano {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+.caja-linea__tamano select {
+  height: 30px;
+  padding: 0 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.caja-linea__cantidad {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.caja-linea__cantidad .boton {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 16px;
+}
+
+.caja-linea__cantidad input {
+  width: 40px;
+  height: 28px;
+  padding: 0;
+  text-align: center;
+}
+
+/* Tarjeta con tamaños (D119): las unidades de todos sus tamaños entre − y +. */
+.caja-sabor__unidades {
+  min-width: 32px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.caja-linea__otro-tamano {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.caja-linea__otro-tamano:hover {
+  text-decoration: underline;
 }
 
 .caja-linea__precio input {

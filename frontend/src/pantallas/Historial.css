@@ -39,6 +39,19 @@
   max-width: 320px;
 }
 
+/* Descargar la lista filtrada (D116) */
+.historial__descargar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+}
+
+.historial__descargar > .aviso {
+  flex-basis: 100%;
+}
+
 /* Pestañas: ventas del sistema / notas 2026 / Excel 2024. */
 .historial__vistas {
   display: flex;
@@ -420,4 +433,30 @@
 .historial__con-tabla .historial__acciones button {
   padding: 2px 6px;
   font-size: 12px;
+}
+
+/* Ventas de antes del ERP (D121) */
+.historial__cabecera-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.historial__vacio {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.historial__vacio-cuerpo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.historial__vacio-cuerpo p {
+  margin: 0;
+  max-width: 760px;
 }

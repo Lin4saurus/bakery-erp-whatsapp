@@ -1,14 +1,26 @@
 import { Router } from "express";
 import { z } from "zod";
-import { CategoriaInsumo, TipoProducto, UnidadMedida, type Producto } from "@prisma/client";
+import { CategoriaInsumo, Prisma, TipoProducto, UnidadMedida, type Producto } from "@prisma/client";
 import { prisma } from "../prisma";
 import { AppError } from "../errors";
 import { crearRespaldo } from "../services/backup";
 import { calcularCostoProducto, precargarCosteo, verificarSinCiclos, type MemoCosteo } from "../services/costeo";
 import { alMenosUnCampo, decimalNoNegativo, decimalPositivo, nombre, parseId } from "../validacion";
 
+// Tamaños (D118): con `tamano`, el nombre se arma solo como «grupo · tamaño».
+const textoOpcional = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v : v === undefined ? undefined : null));
+
 const productoSchema = z.object({
   nombre,
+  grupo: textoOpcional(80),
+  tamano: textoOpcional(40),
   categoria: z.string().trim().min(1, "Es obligatorio.").max(60),
   tipo: z.nativeEnum(TipoProducto).optional(),
   rendimientoReceta: decimalPositivo,
@@ -85,15 +97,26 @@ productosRouter.get("/:id", async (req, res) => {
   res.json(await resumenConCosto(producto));
 });
 
+// Nombre, grupo y tamaño juntos (D118): con tamaño, «grupo · tamaño»; sin tamaño, solo el nombre.
+const SEPARADOR = " · ";
+function armarNombre(nombre: string, grupo: string | null | undefined, tamano: string | null | undefined) {
+  if (!tamano) return { nombre, grupo: null, tamano: null };
+  const base = grupo || nombre;
+  if (base.includes(SEPARADOR) || tamano.includes(SEPARADOR)) {
+    throw new AppError(400, `El nombre y el tamaño no pueden llevar «${SEPARADOR.trim()}».`);
+  }
+  return { nombre: `${base}${SEPARADOR}${tamano}`, grupo: base, tamano };
+}
+
 productosRouter.post("/", async (req, res) => {
-  const datos = productoSchema.parse(req.body);
-  const producto = await prisma.producto.create({ data: datos });
+  const { nombre, grupo, tamano, ...resto } = productoSchema.parse(req.body);
+  const producto = await prisma.producto.create({ data: { ...resto, ...armarNombre(nombre, grupo, tamano) } });
   res.status(201).json(await resumenConCosto(producto));
 });
 
 productosRouter.patch("/:id", async (req, res) => {
   const id = parseId(req.params.id);
-  const datos = actualizarSchema.parse(req.body);
+  const { nombre, grupo, tamano, ...datos } = actualizarSchema.parse(req.body);
   const actual = await buscarProducto(id);
   if (datos.tipo === TipoProducto.VENTA && actual.tipo === TipoProducto.INTERMEDIO) {
     const usos = await prisma.componenteReceta.count({ where: { subProductoId: id } });
@@ -101,8 +124,80 @@ productosRouter.patch("/:id", async (req, res) => {
       throw new AppError(409, `"${actual.nombre}" se usa como sub-receta; no puede pasar a ser producto de venta.`);
     }
   }
-  const producto = await prisma.producto.update({ where: { id }, data: datos });
+  const tocaNombre = nombre !== undefined || grupo !== undefined || tamano !== undefined;
+  const nuevo = tocaNombre
+    ? armarNombre(
+        nombre ?? (actual.tamano ? (actual.grupo as string) : actual.nombre),
+        grupo !== undefined ? grupo : nombre !== undefined ? nombre : actual.grupo,
+        tamano !== undefined ? tamano : actual.tamano,
+      )
+    : {};
+  // Lo que es del producto entero (su nombre y su categoría) cambia en todos sus tamaños.
+  const hermanos = actual.grupo
+    ? await prisma.producto.findMany({ where: { grupo: actual.grupo, id: { not: id }, eliminado: false } })
+    : [];
+  const grupoNuevo: string | null = "grupo" in nuevo ? (nuevo.grupo as string | null) : actual.grupo;
+  const renombrar = actual.grupo !== null && grupoNuevo !== null && grupoNuevo !== actual.grupo;
+  const [producto] = await prisma.$transaction([
+    prisma.producto.update({ where: { id }, data: { ...datos, ...nuevo } }),
+    ...hermanos
+      .filter(() => renombrar || datos.categoria !== undefined)
+      .map((h) =>
+        prisma.producto.update({
+          where: { id: h.id },
+          data: {
+            ...(datos.categoria !== undefined ? { categoria: datos.categoria } : {}),
+            ...(renombrar ? armarNombre(grupoNuevo as string, grupoNuevo, h.tamano) : {}),
+          },
+        }),
+      ),
+  ]);
   res.json(await resumenConCosto(producto));
+});
+
+// Agregar un tamaño (D118): copia el producto con otro tamaño y precio. La receta se multiplica por `factor`
+// (ingredientes y sub-recetas); los empaques se copian tal cual, porque van uno por lo que se vende.
+const tamanoNuevoSchema = z.object({
+  tamano: z.string().trim().min(1, "Escribe el tamaño o la porción.").max(40),
+  precioVenta: decimalNoNegativo,
+  factor: decimalPositivo,
+  tamanoActual: z.string().trim().max(40).optional(), // si el producto todavía no tenía tamaño
+});
+
+productosRouter.post("/:id/tamanos", async (req, res) => {
+  const id = parseId(req.params.id);
+  const { tamano, precioVenta, factor, tamanoActual } = tamanoNuevoSchema.parse(req.body);
+  const origen = await prisma.producto.findUnique({ where: { id }, include: { ingredientes: { include: { insumo: true } }, subRecetas: true } });
+  if (!origen || origen.eliminado) throw new AppError(404, `No existe el producto ${id}.`);
+  if (origen.tipo !== TipoProducto.VENTA) throw new AppError(422, "Solo los productos de venta tienen tamaños.");
+  if (!origen.tamano && !tamanoActual) {
+    throw new AppError(400, `«${origen.nombre}» todavía no tiene tamaño: escribe primero cómo se llama su tamaño actual.`);
+  }
+  const grupo = origen.grupo ?? origen.nombre;
+  const multiplicar = (c: Prisma.Decimal) => c.mul(factor).toDecimalPlaces(4);
+  const nuevo = await prisma.$transaction(async (tx) => {
+    if (!origen.tamano) await tx.producto.update({ where: { id }, data: armarNombre(grupo, grupo, tamanoActual) });
+    return tx.producto.create({
+      data: {
+        ...armarNombre(grupo, grupo, tamano),
+        categoria: origen.categoria,
+        tipo: origen.tipo,
+        rendimientoReceta: origen.rendimientoReceta,
+        unidadRendimiento: origen.unidadRendimiento,
+        unidadesPorVenta: origen.unidadesPorVenta,
+        precioVenta,
+        activo: origen.activo,
+        ingredientes: {
+          create: origen.ingredientes.map((i) => ({
+            insumoId: i.insumoId,
+            cantidad: i.insumo.categoria === CategoriaInsumo.EMPAQUE ? i.cantidad : multiplicar(i.cantidad),
+          })),
+        },
+        subRecetas: { create: origen.subRecetas.map((s) => ({ subProductoId: s.subProductoId, cantidad: multiplicar(s.cantidad) })) },
+      },
+    });
+  });
+  res.status(201).json(await resumenConCosto(nuevo));
 });
 
 // Borrar una categoría entera (D64): todas sus recetas del mismo tipo, con la regla de D63 para cada una

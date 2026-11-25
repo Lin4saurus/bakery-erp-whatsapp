@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { MdOutlineLock } from "react-icons/md";
 import { api, mensajeDeError } from "../../api";
 import { Aviso, Button, Campo, Ventana } from "../../ui";
+import { fijarNombreNegocio, inicialNegocio, useNombreNegocio } from "../../negocio";
 import "./Bloqueo.css";
 
 // Pantalla del PIN (D105). «crear»: la primera vez, la dueña elige su PIN. «entrar»: al encender la PC,
@@ -52,6 +53,7 @@ export function Bloqueo({
   const [repetido, setRepetido] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const nombre = useNombreNegocio();
 
   const puedeEnviar = modo === "crear" ? pinValido(pin) && pin === repetido : pinValido(pin);
 
@@ -77,11 +79,11 @@ export function Bloqueo({
       <div className="bloqueo__tarjeta">
         <div className="bloqueo__marca">
           <span className="bloqueo__logo" aria-hidden>
-            D
+            {inicialNegocio(nombre)}
           </span>
           <span>
-            <strong>Dulzura</strong>
-            <span>Pastelería</span>
+            <strong>{nombre}</strong>
+            <span>Costos y ventas</span>
           </span>
         </div>
 
@@ -128,6 +130,46 @@ export function Bloqueo({
   );
 }
 
+// Nombre del negocio (D117): sale en el menú, la pantalla del PIN, los reportes y las descargas.
+export function NombreNegocio({ cerrar }: { cerrar: () => void }) {
+  const actual = useNombreNegocio();
+  const [nombre, setNombre] = useState(actual);
+  const [error, setError] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const limpio = nombre.trim();
+  const puede = limpio.length >= 2 && limpio.length <= 60 && limpio !== actual;
+
+  const guardar = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!puede || enviando) return;
+    setEnviando(true);
+    setError(null);
+    try {
+      const { nombre: guardado } = await api.guardarNombreNegocio(limpio);
+      fijarNombreNegocio(guardado);
+      cerrar();
+    } catch (err) {
+      setError(mensajeDeError(err));
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <Ventana titulo="Nombre del negocio" subtitulo="Sale en el menú, la pantalla del PIN, los reportes y las descargas." cerrar={cerrar} angosta>
+      <form className="bloqueo__form" onSubmit={guardar}>
+        <Campo etiqueta="Nombre">
+          <input value={nombre} maxLength={60} autoFocus onChange={(e) => setNombre(e.target.value)} placeholder="Ej.: Pastelería Rainbow" />
+        </Campo>
+        {error && <Aviso tipo="error">{error}</Aviso>}
+        <Button type="submit" variante="primario" disabled={!puede || enviando}>
+          {enviando ? "Guardando…" : "Guardar nombre"}
+        </Button>
+      </form>
+    </Ventana>
+  );
+}
+
 export function CambiarPin({ cerrar }: { cerrar: () => void }) {
   const [actual, setActual] = useState("");
   const [nuevo, setNuevo] = useState("");
@@ -153,7 +195,7 @@ export function CambiarPin({ cerrar }: { cerrar: () => void }) {
   };
 
   return (
-    <Ventana titulo="Cambiar PIN" cerrar={cerrar}>
+    <Ventana titulo="Cambiar PIN" cerrar={cerrar} angosta>
       {listo ? (
         <div className="bloqueo__form">
           <Aviso tipo="ok">Listo: desde ahora entra con el PIN nuevo.</Aviso>

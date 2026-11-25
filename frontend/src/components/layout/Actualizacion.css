@@ -2,6 +2,7 @@
 .actualizacion {
   display: grid;
   gap: var(--space-2, 16px);
+  padding: var(--space-3, 24px); /* el cuerpo de la ventana no trae márgenes propios */
 }
 
 .actualizacion p {

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { IconType } from "react-icons";
 import { MdChevronLeft, MdChevronRight } from "react-icons/md";
+import { inicialNegocio, useNombreNegocio } from "../../negocio";
 import "./Sidebar.css";
 
 export interface ItemMenu<K extends string> {
@@ -31,6 +32,7 @@ export function Sidebar<K extends string>({
   elegir: (clave: K) => void;
   cerrar: () => void;
 }) {
+  const nombre = useNombreNegocio();
   const secciones = [...new Set(items.map((i) => i.seccion))];
   return (
     <>
@@ -46,12 +48,11 @@ export function Sidebar<K extends string>({
           title={colapsado ? "Mostrar el menú completo" : "Dejar solo los íconos"}
         >
           <span className="sidebar__logo" aria-hidden>
-            D
+            {inicialNegocio(nombre)}
           </span>
-          {/* Dulzura Pastelería (D65): en dos líneas para que quepa en el menú de 200 px. */}
-          <span className="sidebar__nombre">
-            Dulzura
-            <span className="sidebar__subnombre">Pastelería</span>
+          {/* Nombre del negocio (D117): hasta dos líneas para que quepa en el menú de 200 px. */}
+          <span className="sidebar__nombre" title={nombre}>
+            {nombre}
           </span>
           <span className="sidebar__colapsar" aria-hidden>
             {colapsado ? <MdChevronRight /> : <MdChevronLeft />}

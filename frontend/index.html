@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dulzura Pastelería · Costos y Ventas</title>
+    <title>Costos y Ventas</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%238b6f47'/><text x='16' y='22' font-size='17' text-anchor='middle' fill='white' font-family='Arial' font-weight='600'>D</text></svg>" />
     <script>
       (function () {
@@ -17,9 +17,37 @@
         document.documentElement.dataset.theme = tema;
       })();
     </script>
+    <!-- Pantalla de carga (D125): se pinta al instante, antes de que llegue el JavaScript; React la reemplaza. -->
+    <style>
+      html, body { margin: 0; background: #f6f6f6; }
+      html[data-theme="dark"], html[data-theme="dark"] body { background: #15171a; }
+      .arranque { min-height: 100vh; display: grid; place-items: center; font-family: system-ui, "Segoe UI", sans-serif; }
+      .arranque div { display: grid; justify-items: center; gap: 10px; color: #6b6b6b; font-size: 14px; }
+      html[data-theme="dark"] .arranque div { color: #9b9ea3; }
+      .arranque b { width: 56px; height: 56px; border-radius: 12px; background: #8b6f47; color: #fff; display: grid;
+        place-items: center; font: 600 30px Arial, sans-serif; animation: arranque 1.2s ease-in-out infinite alternate; }
+      @keyframes arranque { from { opacity: .55; } to { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { .arranque b { animation: none; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="arranque"><div><b id="arranque-letra">·</b><span id="arranque-nombre">Abriendo…</span></div></div></div>
+    <script>
+      // Nombre del negocio recordado en este navegador (D117): se pinta antes de que llegue React.
+      (function () {
+        var nombre = null;
+        try {
+          nombre = localStorage.getItem("negocio-nombre");
+        } catch (e) {}
+        if (!nombre) return;
+        var propia = nombre.split(/\s+/).filter(function (p) {
+          return !/^(pasteler[ií]a|reposter[ií]a|panader[ií]a|la|el|los|las|de|del)$/i.test(p);
+        })[0] || nombre;
+        document.title = nombre + " · Costos y Ventas";
+        document.getElementById("arranque-letra").textContent = propia.charAt(0).toUpperCase();
+        document.getElementById("arranque-nombre").textContent = nombre;
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

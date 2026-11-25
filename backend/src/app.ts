@@ -16,6 +16,8 @@ import { configuracionRouter } from "./routes/configuracion";
 import { sesionRouter } from "./routes/sesion";
 import { reportesRouter } from "./routes/reportes";
 import { actualizacionRouter } from "./routes/actualizacion";
+import { exportarRouter } from "./routes/exportar";
+import { guardarNegocio, leerNegocio } from "./routes/negocio";
 import { versionInstalada } from "./services/actualizacion";
 import { exigirSesion } from "./services/sesion";
 import { errorHandler, notFoundHandler } from "./errors";
@@ -29,6 +31,9 @@ export function createApp({ exigirSesion: conSesion = true }: { exigirSesion?: b
   // Solo las dos rutas que reciben el comprobante de pago (foto o PDF en base64, D86) aceptan hasta 15 MB; el resto,
   // 100 kB. Un cuerpo enorme en cualquier otra ruta se corta antes de llegar a Zod (S4, AUDITORIA.md).
   app.use(["/api/pedidos/pago-whatsapp", "/api/pedidos/:id/pago"], express.json({ limit: "15mb" }));
+  // La descarga del Historial manda la lista que se ve (D116): un año de ventas pesa más que 100 kB.
+  app.use("/api/exportar/ventas", express.json({ limit: "5mb" }));
+  app.use("/api/historico/importar", express.json({ limit: "8mb" })); // el Excel de ventas anteriores en base64 (D121)
   app.use(express.json({ limit: "100kb" }));
 
   // La versión sirve para saber que el ERP volvió a arrancar ya actualizado (D112).
@@ -38,7 +43,10 @@ export function createApp({ exigirSesion: conSesion = true }: { exigirSesion?: b
   });
   // PIN de la dueña (D105): sin sesión solo se puede entrar; el agente de WhatsApp usa su propia clave.
   app.use("/api/sesion", sesionRouter);
+  // El nombre del negocio (D117) se lee sin sesión: la pantalla del PIN lo muestra. Cambiarlo pide sesión.
+  app.get("/api/negocio", leerNegocio);
   if (conSesion) app.use("/api", exigirSesion);
+  app.put("/api/negocio", guardarNegocio);
   app.use("/api/insumos", insumosRouter);
   app.use("/api/productos", productosRouter);
   app.use("/api/ventas", ventasRouter);
@@ -55,6 +63,7 @@ export function createApp({ exigirSesion: conSesion = true }: { exigirSesion?: b
   app.use("/api/configuracion", configuracionRouter);
   app.use("/api/reportes", reportesRouter);
   app.use("/api/actualizacion", actualizacionRouter);
+  app.use("/api/exportar", exportarRouter);
 
   if (existsSync(FRONTEND_DIST)) {
     // index.html se revisa siempre, para que una versión nueva se vea al recargar;
@@ -64,6 +73,9 @@ export function createApp({ exigirSesion: conSesion = true }: { exigirSesion?: b
       express.static(FRONTEND_DIST, {
         setHeaders: (res, ruta) => {
           if (ruta.endsWith(".html")) res.setHeader("Cache-Control", "no-cache");
+          // Abrir más rápido (D115): Edge los guarda un año y no vuelve a preguntar por ellos en cada apertura;
+          // así además reutiliza el JavaScript ya procesado. Una versión nueva trae otros nombres (otro hash).
+          else if (/[\\/]assets[\\/]/.test(ruta)) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
         },
       }),
     );

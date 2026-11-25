@@ -7,6 +7,7 @@ export class AppError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly detalles?: { campo: string; mensaje: string }[], // qué fila o campo falló (D121)
   ) {
     super(message);
     this.name = "AppError";
@@ -24,7 +25,7 @@ const esJsonMalFormado = (error: unknown): boolean => tipoDeError(error) === "en
 // Express 5 envía aquí también los errores de los handlers async.
 export const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
   if (error instanceof AppError) {
-    res.status(error.status).json({ error: error.message });
+    res.status(error.status).json(error.detalles ? { error: error.message, detalles: error.detalles } : { error: error.message });
     return;
   }
   if (error instanceof ZodError) {

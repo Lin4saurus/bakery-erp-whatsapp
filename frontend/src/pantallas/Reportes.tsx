@@ -3,6 +3,7 @@ import { MdOutlineFileDownload, MdOutlinePrint } from "react-icons/md";
 import { api, mensajeDeError, type Reporte } from "../api";
 import { bs, cantidad, hoyISO } from "../formato";
 import { Aviso, Button, Campo, Cargando, Panel, Tarjeta, useDatos } from "../ui";
+import { useNombreNegocio } from "../negocio";
 import "./Reportes.css";
 
 // Reporte para el contador (D106): ventas, ganancia por producto, ventas por día y gastos de un periodo.
@@ -19,6 +20,7 @@ const mesDe = (corrimiento: number): { desde: string; hasta: string } => {
 const fechaCorta = (dia: string) => dia.split("-").reverse().join("/");
 
 export function Reportes() {
+  const negocio = useNombreNegocio();
   const [periodo, setPeriodo] = useState(() => {
     const mes = mesDe(0);
     return { desde: mes.desde, hasta: hoyISO() < mes.hasta ? hoyISO() : mes.hasta };
@@ -89,7 +91,7 @@ export function Reportes() {
       {r && (
         <>
           <p className="reportes__titulo-impreso">
-            <strong>Dulzura Pastelería</strong> · Reporte del {fechaCorta(r.desde)} al {fechaCorta(r.hasta)}
+            <strong>{negocio}</strong> · Reporte del {fechaCorta(r.desde)} al {fechaCorta(r.hasta)}
           </p>
           <div className="grilla-tarjetas">
             <Tarjeta titulo="Ventas" valor={bs(r.resumen.ventas)} detalle={`${r.resumen.pedidos} pedido(s) cobrados`} />

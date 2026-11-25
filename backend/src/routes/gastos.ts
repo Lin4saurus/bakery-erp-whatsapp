@@ -20,7 +20,7 @@ const gastoSchema = z
     insumoId: z.number().int().positive().optional(),
     envases: decimalPositivo.optional(),
     cantidad: decimalPositivo.optional(), // en la unidad base del insumo (g, ml, u)
-    actualizarPrecio: z.boolean().default(true), // con envases: el precio del envase pasa a monto / envases
+    actualizarPrecio: z.boolean().default(true), // el precio del envase pasa al de esta compra (envases o cantidad, D122)
   })
   .superRefine((g, ctx) => {
     const problema = (path: string, message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });

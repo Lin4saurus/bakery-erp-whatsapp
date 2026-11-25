@@ -245,12 +245,17 @@
   }
 }
 
-/* Nombre en dos líneas y botón de colapsar con el ícono centrado (D65). */
+/* Nombre del negocio (D117): hasta dos líneas; si es más largo, termina en «…». */
 .sidebar__nombre {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.1;
-  font-size: 16px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.15;
+  font-size: 15px;
+  text-align: left;
 }
 
 .sidebar__subnombre {

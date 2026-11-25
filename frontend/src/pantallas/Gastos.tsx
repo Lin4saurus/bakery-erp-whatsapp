@@ -54,10 +54,14 @@ export function Gastos() {
   const valido = esCompra
     ? insumo !== undefined && numeroPositivo(cuanto) && numeroPositivo(monto)
     : descripcion.trim() !== "" && numeroPositivo(monto);
+  // Precio del envase según esta compra (D122): por envases, pagado ÷ envases; por cantidad, pagado ÷ cantidad × contenido.
   const precioNuevo =
-    esCompra && porEnvases && numeroPositivo(envases) && numeroPositivo(monto)
-      ? Number(normalizarNumero(monto)) / Number(normalizarNumero(envases))
+    esCompra && insumo && numeroPositivo(monto) && numeroPositivo(cuanto)
+      ? porEnvases
+        ? Number(normalizarNumero(monto)) / Number(normalizarNumero(envases))
+        : (Number(normalizarNumero(monto)) / Number(normalizarNumero(cantidadBase))) * Number(insumo.contenidoEnvase)
       : null;
+  const cambiaPrecio = insumo !== undefined && precioNuevo !== null && Math.abs(precioNuevo - Number(insumo.precioEnvase)) > 0.005;
   const entra =
     insumo && numeroPositivo(cuanto)
       ? medida(
@@ -81,18 +85,21 @@ export function Gastos() {
         ...(esCompra && insumo
           ? {
               insumoId: insumo.id,
-              ...(porEnvases
-                ? { envases: normalizarNumero(envases), actualizarPrecio }
-                : { cantidad: normalizarNumero(cantidadBase) }),
+              actualizarPrecio,
+              ...(porEnvases ? { envases: normalizarNumero(envases) } : { cantidad: normalizarNumero(cantidadBase) }),
             }
           : {}),
       });
       await Promise.all([lista.recargar(), esCompra ? insumos.recargar() : Promise.resolve()]);
       setMensaje(
         esCompra && insumo && entra
-          ? `Compra guardada: ${gasto.descripcion} (${bs(gasto.monto)}). Entraron ${entra} de ${insumo.nombre} al stock.`
+          ? `Compra guardada: ${gasto.descripcion} (${bs(gasto.monto)}). Entraron ${entra} de ${insumo.nombre} al stock.` +
+              (cambiaPrecio && actualizarPrecio && precioNuevo !== null
+                ? ` El envase de ${insumo.nombre} pasó de ${bs(insumo.precioEnvase)} a ${bs(precioNuevo)}: las recetas ya usan el precio nuevo.`
+                : "")
           : `Gasto guardado: ${gasto.descripcion} (${bs(gasto.monto)}).`,
       );
+      setActualizarPrecio(true); // cada compra vuelve a proponer el precio nuevo
       setDescripcion("");
       setMonto("");
       setEnvases("1");
@@ -202,12 +209,15 @@ export function Gastos() {
                 {medida(insumo.stockActual, insumo.unidadBase)}).
               </p>
             )}
-            {insumo && precioNuevo !== null && Math.abs(precioNuevo - Number(insumo.precioEnvase)) > 0.005 && (
+            {/* D122: marcado por defecto; los precios cambian seguido y así el costo de las recetas sigue al día. */}
+            {insumo && cambiaPrecio && precioNuevo !== null && (
               <label className="gastos__precio">
                 <input type="checkbox" checked={actualizarPrecio} onChange={(e) => setActualizarPrecio(e.target.checked)} />
                 <span>
-                  Actualizar el precio del envase: {bs(insumo.precioEnvase)} → <strong>{bs(precioNuevo)}</strong> (cambia el costo
-                  de las recetas que lo usan)
+                  Actualizar el precio del envase de {medida(insumo.contenidoEnvase, insumo.unidadBase)}: {bs(insumo.precioEnvase)} →{" "}
+                  <strong>{bs(precioNuevo)}</strong>
+                  {precioNuevo > Number(insumo.precioEnvase) ? " (subió)" : " (bajó)"}. Cambia el costo de las recetas que lo usan;
+                  desmárcalo si fue una oferta o un precio de una sola vez.
                 </span>
               </label>
             )}

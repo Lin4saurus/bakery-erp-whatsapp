@@ -69,9 +69,11 @@
   color: var(--color-warning);
 }
 
+/* Dentro de la ventana: el cuerpo no trae márgenes propios (es para tablas), los pone el formulario. */
 .correo-respaldo {
   display: grid;
   gap: var(--space-2, 16px);
+  padding: var(--space-3, 24px);
 }
 
 .correo-respaldo__pasos {

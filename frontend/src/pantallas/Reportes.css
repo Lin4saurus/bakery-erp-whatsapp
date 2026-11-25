@@ -41,11 +41,18 @@
   border-top: 1px solid var(--color-border);
 }
 
+/* Ventas por día y Gastos lado a lado, alineados arriba y de la misma altura. El margen va en la grilla: la regla
+   global «.panel + .panel» (Caja.css) bajaba el segundo panel una vez abierta la Caja. */
 .reportes__columnas {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
   gap: var(--space-3);
-  align-items: start;
+  align-items: stretch;
+  margin-bottom: var(--space-3);
+}
+
+.reportes .reportes__columnas > .panel {
+  margin: 0;
 }
 
 @media (max-width: 900px) {
@@ -54,12 +61,20 @@
   }
 }
 
-/* Al imprimir (o guardar como PDF) solo va el reporte, en blanco y negro legible. */
+/* Al imprimir (o guardar como PDF) solo va el reporte, compacto para que un mes entre en una hoja A4 (D124):
+   las tarjetas son un vistazo (chicas, en una fila); lo que importa son las tablas. */
+/* Margen 0: así el navegador no agrega fecha, título ni dirección arriba y abajo; el margen lo pone la página. */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
 @media print {
   .sidebar,
   .sidebar__fondo,
   .topbar,
-  .no-imprimir {
+  .no-imprimir,
+  .reportes > .cabecera-pantalla {
     display: none !important;
   }
 
@@ -68,27 +83,129 @@
   }
 
   .app__contenido {
-    padding: 0 !important;
+    padding: 9mm 10mm !important;
     max-width: none !important;
   }
 
+  html,
   body {
     background: #fff !important;
+    font-size: 10px;
   }
 
   .reportes__titulo-impreso {
     display: block;
-    margin: 0 0 12px;
+    margin: 0 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1.5px solid #333;
+    font-size: 14px;
+    color: #111;
+  }
+
+  .reportes__titulo-impreso strong {
+    font-size: 16px;
+  }
+
+  /* Tarjetas: las cinco en una fila, chicas. */
+  .reportes .grilla-tarjetas {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .reportes .tarjeta {
+    padding: 6px 8px;
+    border-radius: 4px;
+  }
+
+  .reportes .tarjeta-titulo {
+    font-size: 8.5px;
+  }
+
+  .reportes .tarjeta-valor {
+    margin-top: 2px;
     font-size: 15px;
   }
 
-  .reportes .panel,
-  .reportes .tarjeta {
+  .reportes .tarjeta-detalle {
+    margin-top: 1px;
+    font-size: 8.5px;
+  }
+
+  .reportes .tarjeta-valor:not(.positivo):not(.negativo) {
+    color: #111 !important;
+  }
+
+  .reportes .tarjeta-icono {
+    display: none;
+  }
+
+  .reportes__nota {
+    margin: 0 0 8px;
+    font-size: 9.5px;
+  }
+
+  /* Tablas: letra y celdas compactas. */
+  .reportes .panel {
+    margin-bottom: 8px;
+    border-radius: 4px;
     box-shadow: none !important;
+  }
+
+  .reportes .panel-cabecera {
+    padding: 3px 6px !important;
+  }
+
+  .reportes .panel-cabecera h2,
+  .reportes .panel-cabecera h3 {
+    font-size: 11.5px !important;
+    color: #111 !important;
+  }
+
+  .reportes .tarjeta-titulo,
+  .reportes .tarjeta-detalle,
+  .reportes__nota {
+    color: #444 !important;
+  }
+
+  /* Todo lo de las tablas al mismo tamaño (algunas celdas traían el suyo) y en tinta oscura. */
+  .reportes table,
+  .reportes table * {
+    font-size: 9.5px !important;
+    color: #1a1a1a !important;
+  }
+
+  .reportes th,
+  .reportes td {
+    padding: 1px 6px !important;
+    line-height: 1.2 !important;
+  }
+
+  .reportes thead th,
+  .reportes thead th * {
+    font-size: 8.5px !important;
+    color: #555 !important;
+  }
+
+  .reportes tfoot th {
+    font-weight: 700;
+    border-top: 1px solid #333 !important;
+  }
+
+  .reportes .vacio {
+    margin: 0;
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+
+  .reportes tr {
     break-inside: avoid;
   }
 
+  /* Ventas por día y Gastos lado a lado también en papel. */
   .reportes__columnas {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+    gap: 8px;
+    margin-bottom: 0;
   }
 }

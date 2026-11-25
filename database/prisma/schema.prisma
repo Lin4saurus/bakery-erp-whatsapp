@@ -66,7 +66,12 @@ model Producto {
   // Cuántas unidades de la receta van en lo que se vende a precioVenta: 4 en «Brownies clásicos 4 u», 1 en lo demás (D60).
   // Costo de lo vendido = ingredientes ÷ rendimiento × unidadesPorVenta + empaques (los empaques no se dividen).
   unidadesPorVenta  Decimal      @default(1)
-  activo            Boolean      @default(true) // sigue en el catálogo; false = retirado (ej. receta histórica)
+  // Tamaños (D118): cada tamaño sigue siendo un producto (su precio, su receta, su costo y sus ventas), pero los del
+  // mismo producto comparten `grupo` («Torta Matilda de quinua») y cada uno dice su `tamano` («15 personas»).
+  // Con tamaño, el nombre es «grupo · tamaño». Sin tamaño, los dos quedan en null.
+  grupo             String?
+  tamano            String?
+  activo           Boolean      @default(true) // sigue en el catálogo; false = retirado (ej. receta histórica)
   // Receta borrada de un producto que tiene ventas (D63): no se ve en Recetas ni en la Caja; sus ventas siguen en el Historial.
   eliminado         Boolean      @default(false)
   createdAt         DateTime     @default(now())
@@ -79,6 +84,8 @@ model Producto {
   ventasHistoricas VentaHistorica[]
   preciosCliente   PrecioCliente[]
   lineasPedido     PedidoLinea[]
+
+  @@index([grupo])
 }
 
 // Receta (BOM): cantidad de cada insumo para UNA tanda del producto. Los EMPAQUE de un producto de venta van

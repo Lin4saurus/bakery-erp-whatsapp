@@ -20,6 +20,9 @@
 .topbar__ruta {
   font-size: 12px;
   color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .topbar__pagina {
@@ -36,6 +39,7 @@
 
 .topbar__fecha {
   display: inline-block;
+  white-space: nowrap;
   font-size: 13px;
   color: var(--color-text-secondary);
 }
@@ -74,8 +78,40 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-left: var(--space-2);
+  padding: 4px 8px 4px var(--space-2);
+  border: 0;
   border-left: 1px solid var(--color-border);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  max-width: 260px;
+}
+
+.topbar__perfil:disabled {
+  cursor: default;
+}
+
+.topbar__perfil:not(:disabled):hover {
+  background: var(--color-surface-muted);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.topbar__perfil-texto strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar__perfil-texto {
+  min-width: 0;
+}
+
+.topbar__perfil-editar {
+  flex: none;
+  color: var(--color-text-secondary);
+  font-size: 16px;
 }
 
 .topbar__avatar {

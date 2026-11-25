@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import {
   MdOutlineDashboard,
   MdOutlineSupportAgent,
@@ -16,38 +16,56 @@ import { EstadoRespaldo } from "./components/layout/EstadoRespaldo";
 import { VersionErp } from "./components/layout/Actualizacion";
 import { Sidebar, type ItemMenu } from "./components/layout/Sidebar";
 import { Topbar } from "./components/layout/Topbar";
-import { Bloqueo, CambiarPin } from "./components/layout/Bloqueo";
+import { Bloqueo, CambiarPin, NombreNegocio } from "./components/layout/Bloqueo";
+import { cargarNombreNegocio } from "./negocio";
 import { useInactividad } from "./hooks/useInactividad";
 import { useTema } from "./hooks/useTema";
 import { Inicio } from "./pantallas/Inicio";
-import { Caja } from "./pantallas/Caja";
-import { Insumos } from "./pantallas/Insumos";
-import { Recetas } from "./pantallas/Recetas";
-import { Desempeno, Historial } from "./pantallas/Historial";
-import { Gastos } from "./pantallas/Gastos";
-import { Clientes } from "./pantallas/Clientes";
-import { Pedidos } from "./pantallas/Pedidos";
-import { Atenciones } from "./pantallas/Atenciones";
-import { Reportes } from "./pantallas/Reportes";
 import { EVENTO_BLOQUEADO, api } from "./api";
 import { urgentes } from "./pedidos";
 import { conectarAvisos } from "./avisos";
 import { EN_DEMO } from "./demo";
 import "./App.css";
 
+// Abrir más rápido (D125): al arrancar solo se descarga y procesa Inicio; las demás pantallas se cargan
+// apenas la ventana queda quieta (precargarPantallas), así que al tocarlas en el menú ya están listas.
+const cargadores = {
+  caja: () => import("./pantallas/Caja").then((m) => m.Caja),
+  pedidos: () => import("./pantallas/Pedidos").then((m) => m.Pedidos),
+  atencion: () => import("./pantallas/Atenciones").then((m) => m.Atenciones),
+  gastos: () => import("./pantallas/Gastos").then((m) => m.Gastos),
+  clientes: () => import("./pantallas/Clientes").then((m) => m.Clientes),
+  recetas: () => import("./pantallas/Recetas").then((m) => m.Recetas),
+  insumos: () => import("./pantallas/Insumos").then((m) => m.Insumos),
+  desempeno: () => import("./pantallas/Historial").then((m) => m.Desempeno),
+  historial: () => import("./pantallas/Historial").then((m) => m.Historial),
+  reportes: () => import("./pantallas/Reportes").then((m) => m.Reportes),
+} satisfies Record<string, () => Promise<ComponentType>>;
+
+const diferida = (cargar: () => Promise<ComponentType>) => lazy(() => cargar().then((c) => ({ default: c })));
+
 const pantallas = {
   inicio: Inicio,
-  caja: Caja,
-  pedidos: Pedidos,
-  atencion: Atenciones,
-  gastos: Gastos,
-  clientes: Clientes,
-  recetas: Recetas,
-  insumos: Insumos,
-  desempeno: Desempeno,
-  historial: Historial,
-  reportes: Reportes,
+  caja: diferida(cargadores.caja),
+  pedidos: diferida(cargadores.pedidos),
+  atencion: diferida(cargadores.atencion),
+  gastos: diferida(cargadores.gastos),
+  clientes: diferida(cargadores.clientes),
+  recetas: diferida(cargadores.recetas),
+  insumos: diferida(cargadores.insumos),
+  desempeno: diferida(cargadores.desempeno),
+  historial: diferida(cargadores.historial),
+  reportes: diferida(cargadores.reportes),
 } as const;
+
+let precargadas = false;
+function precargarPantallas() {
+  if (precargadas) return;
+  precargadas = true;
+  const todas = () => Object.values(cargadores).forEach((cargar) => void cargar().catch(() => {}));
+  if ("requestIdleCallback" in window) window.requestIdleCallback(todas, { timeout: 2000 });
+  else setTimeout(todas, 300);
+}
 
 type Pantalla = keyof typeof pantallas;
 
@@ -105,6 +123,7 @@ export function App() {
   }, []);
   useEffect(() => {
     void revisar();
+    void cargarNombreNegocio(); // D117: no pide sesión, así la pantalla del PIN ya lo muestra
     const alBloquearse = () => void revisar();
     window.addEventListener(EVENTO_BLOQUEADO, alBloquearse);
     return () => window.removeEventListener(EVENTO_BLOQUEADO, alBloquearse);
@@ -131,6 +150,7 @@ function Escritorio({
 }) {
   const [actual, setActual] = useState<Pantalla>(desdeHash);
   const [cambiandoPin, setCambiandoPin] = useState(false);
+  const [editandoNombre, setEditandoNombre] = useState(false);
   const [menuAbierto, setMenuAbierto] = useState(false);
   // Menú de solo íconos (D62): se recuerda en este navegador.
   const [colapsado, setColapsado] = useState(() => {
@@ -220,6 +240,7 @@ function Escritorio({
 
   const Componente = pantallas[actual];
   const titulo = menu.find((m) => m.clave === actual)?.titulo ?? "";
+  useEffect(precargarPantallas, []);
 
   return (
     <div className={`app ${colapsado ? "app--colapsado" : ""}`}>
@@ -249,12 +270,16 @@ function Escritorio({
           abrirMenu={() => setMenuAbierto(true)}
           bloquear={bloquear}
           cambiarPin={() => setCambiandoPin(true)}
+          editarNombre={() => setEditandoNombre(true)}
         />
         <main className="app__contenido">
-          <Componente />
+          <Suspense fallback={<p className="secundario">Cargando…</p>}>
+            <Componente />
+          </Suspense>
         </main>
       </div>
       {cambiandoPin && <CambiarPin cerrar={() => setCambiandoPin(false)} />}
+      {editandoNombre && <NombreNegocio cerrar={() => setEditandoNombre(false)} />}
     </div>
   );
 }

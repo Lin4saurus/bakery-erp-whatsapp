@@ -1734,8 +1734,8 @@ describe("Compra de insumos desde Gastos (D51)", () => {
     await api("PATCH", `/insumos/${harina.id}`, { precioEnvase: harina.precioEnvase });
   });
 
-  test("comprar por cantidad en unidad base, sin tocar el precio", async () => {
-    const huevo = await insumoPorNombre("Huevo");
+  test("comprar por cantidad también actualiza el precio del envase, salvo que se pida no hacerlo (D122)", async () => {
+    const huevo = (await insumoPorNombre("Huevo")) as Insumo & { contenidoEnvase: string };
     const antes = await stockDe("Huevo");
     const compra = await api<GastoInsumo>("POST", "/gastos", {
       categoria: "INSUMOS",
@@ -1747,7 +1747,21 @@ describe("Compra de insumos desde Gastos (D51)", () => {
     assert.equal(compra.status, 201);
     assert.equal(compra.body.descripcion, "Maple de huevos");
     assert.ok(cerca((await stockDe("Huevo")).toString(), antes.add(30)));
-    assert.ok(cerca((await insumoPorNombre("Huevo")).precioEnvase, huevo.precioEnvase));
+    // 40 Bs por 30 huevos → el envase (contenidoEnvase huevos) pasa a 40 / 30 × contenido.
+    const esperado = D(40).div(30).mul(huevo.contenidoEnvase);
+    assert.ok(cerca((await insumoPorNombre("Huevo")).precioEnvase, esperado.toString()), "el precio sigue a la última compra");
+
+    await api("PATCH", `/insumos/${huevo.id}`, { precioEnvase: huevo.precioEnvase });
+    const sinCambiar = await api<GastoInsumo>("POST", "/gastos", {
+      categoria: "INSUMOS",
+      insumoId: huevo.id,
+      cantidad: "30",
+      monto: "60",
+      actualizarPrecio: false,
+    });
+    assert.equal(sinCambiar.status, 201);
+    assert.ok(cerca((await insumoPorNombre("Huevo")).precioEnvase, huevo.precioEnvase), "si se desmarca, el precio queda");
+    for (const g of [compra.body, sinCambiar.body]) await api("DELETE", `/gastos/${g.id}`);
   });
 
   test("rechaza compras de insumo incompletas y el insumo en otras categorías", async () => {
@@ -2836,6 +2850,166 @@ describe("Reporte del periodo", () => {
   });
 });
 
+// ---------- Ventas de antes del ERP (D121) ----------
+
+describe("Ventas de antes del ERP", () => {
+  type Revisada = { numero: number; productoId: number | null; costo: number | null; error: string | null };
+
+  test("se anotan una por una: con producto del catálogo estima la ganancia; una fila mala no guarda nada", async () => {
+    const malas = await api<{ detalles: { campo: string }[] }>("POST", "/historico/anotar", {
+      ventas: [
+        { fecha: "2025-03-10", producto: "Queque con relleno", cantidad: 1, total: 45 },
+        { fecha: "2099-01-01", producto: "Queque con relleno", cantidad: 1, total: 45 },
+      ],
+    });
+    assert.equal(malas.status, 400);
+    assert.deepEqual(malas.body.detalles.map((d) => d.campo), ["fila 2"]);
+
+    const buenas = await api<{ guardadas: number; sinReceta: number }>("POST", "/historico/anotar", {
+      ventas: [
+        { fecha: "2025-03-10", producto: "queque CON relleno", cantidad: 2, total: 90, cliente: "Vecina de prueba" },
+        { fecha: "2025-03-11", producto: "Pastel que ya no hago", cantidad: 1, total: 30 },
+      ],
+    });
+    assert.equal(buenas.status, 201);
+    assert.deepEqual(buenas.body, { guardadas: 2, sinReceta: 1 });
+
+    const { body } = await api<{ ventas: { productoNombre: string; productoId: number | null; utilidad: string | null; cliente: string | null }[] }>(
+      "GET",
+      "/historico?desde=2025-03-10&hasta=2025-03-11",
+    );
+    const conReceta = body.ventas.find((v) => v.productoNombre === "Queque con relleno");
+    assert.ok(conReceta?.productoId, "se une con el producto aunque cambien mayúsculas");
+    assert.ok(conReceta?.utilidad !== null, "con receta, la ganancia se estima");
+    assert.equal(conReceta?.cliente, "Vecina de prueba");
+    assert.equal(body.ventas.find((v) => v.productoNombre === "Pastel que ya no hago")?.utilidad, null, "sin receta, sin ganancia");
+  });
+
+  test("la plantilla de Excel se baja, se revisa y se importa", async () => {
+    const res = await fetch(`${base}/historico/plantilla`);
+    assert.equal(res.status, 200);
+    const plantilla = Buffer.from(await res.arrayBuffer());
+    assert.equal(plantilla.subarray(0, 2).toString(), "PK");
+
+    const cuerpo = { nombre: "plantilla.xlsx", archivo: plantilla.toString("base64") };
+    const revision = await api<{ filas: Revisada[] }>("POST", "/historico/importar?probar=1", cuerpo);
+    assert.equal(revision.status, 200);
+    assert.equal(revision.body.filas.length, 2, "las dos filas de ejemplo");
+    assert.ok(revision.body.filas.every((f) => f.error === null && f.productoId !== null), "los ejemplos son productos del catálogo");
+
+    const importada = await api<{ guardadas: number; saltadas: number }>("POST", "/historico/importar", cuerpo);
+    assert.equal(importada.status, 201);
+    assert.deepEqual([importada.body.guardadas, importada.body.saltadas], [2, 0]);
+
+    assert.equal((await api("POST", "/historico/importar?probar=1", { nombre: "x.xlsx", archivo: Buffer.from("no es excel").toString("base64") })).status, 400);
+  });
+});
+
+// ---------- Tamaños de un producto (D118) ----------
+
+describe("Tamaños de un producto", () => {
+  type ProductoApi = { id: number; nombre: string; grupo: string | null; tamano: string | null; categoria: string; precioVenta: string };
+  type CostoApi = { insumos: { insumoId: number; cantidad: string }[] };
+
+  test("con tamaño el nombre se arma solo; agregar un tamaño copia la receta escalada sin escalar el empaque", async () => {
+    const insumos = (await api<{ id: number; categoria: string }[]>("GET", "/insumos")).body;
+    const harina = insumos.find((i) => i.categoria === "MATERIA_PRIMA") as { id: number };
+    const caja = insumos.find((i) => i.categoria === "EMPAQUE") as { id: number };
+
+    const sinTamano = await api<ProductoApi>("POST", "/productos", { nombre: "Torta prueba", categoria: "Pruebas", rendimientoReceta: "1", precioVenta: "50" });
+    assert.equal(sinTamano.status, 201);
+    assert.equal(sinTamano.body.tamano, null);
+    await api("PUT", `/productos/${sinTamano.body.id}/receta`, {
+      ingredientes: [
+        { insumoId: harina.id, cantidad: "100" },
+        { insumoId: caja.id, cantidad: "1" },
+      ],
+    });
+
+    // Sin tamaño todavía: hay que decir cómo se llama el actual.
+    assert.equal((await api("POST", `/productos/${sinTamano.body.id}/tamanos`, { tamano: "8 personas", precioVenta: "95", factor: "2" })).status, 400);
+    const grande = await api<ProductoApi>("POST", `/productos/${sinTamano.body.id}/tamanos`, {
+      tamano: "8 personas",
+      precioVenta: "95",
+      factor: "2",
+      tamanoActual: "4 personas",
+    });
+    assert.equal(grande.status, 201);
+    assert.deepEqual([grande.body.nombre, grande.body.grupo, grande.body.tamano], ["Torta prueba · 8 personas", "Torta prueba", "8 personas"]);
+    const chico = (await api<ProductoApi>("GET", `/productos/${sinTamano.body.id}`)).body;
+    assert.equal(chico.nombre, "Torta prueba · 4 personas", "el original toma su tamaño");
+
+    const receta = (await api<CostoApi>("GET", `/productos/${grande.body.id}/costo`)).body.insumos;
+    assert.equal(Number(receta.find((l) => l.insumoId === harina.id)?.cantidad), 200, "los ingredientes se multiplican");
+    assert.equal(Number(receta.find((l) => l.insumoId === caja.id)?.cantidad), 1, "el empaque no");
+
+    // Cambiar el nombre o la categoría de un tamaño cambia el producto entero.
+    const renombrado = await api<ProductoApi>("PATCH", `/productos/${chico.id}`, { grupo: "Torta de ensayo", categoria: "Ensayos" });
+    assert.equal(renombrado.body.nombre, "Torta de ensayo · 4 personas");
+    const otro = (await api<ProductoApi>("GET", `/productos/${grande.body.id}`)).body;
+    assert.deepEqual([otro.nombre, otro.categoria], ["Torta de ensayo · 8 personas", "Ensayos"]);
+
+    // Un tamaño repetido choca con el nombre único; el separador no se acepta en el tamaño.
+    assert.equal((await api("POST", `/productos/${chico.id}/tamanos`, { tamano: "8 personas", precioVenta: "1", factor: "1" })).status, 409);
+    assert.equal((await api("PATCH", `/productos/${chico.id}`, { tamano: "a · b" })).status, 400);
+
+    for (const p of [chico, otro]) await api("DELETE", `/productos/${p.id}`);
+  });
+});
+
+// ---------- Nombre del negocio (D117) ----------
+
+describe("Nombre del negocio", () => {
+  test("sin nombre guardado usa uno genérico; la dueña lo cambia y se valida", async () => {
+    assert.deepEqual((await api("GET", "/negocio")).body, { nombre: "Mi pastelería" });
+    assert.equal((await api("PUT", "/negocio", { nombre: " " })).status, 400);
+    assert.equal((await api("PUT", "/negocio", { nombre: "x".repeat(61) })).status, 400);
+    const guardado = await api("PUT", "/negocio", { nombre: "  Pastelería Rainbow  " });
+    assert.equal(guardado.status, 200);
+    assert.deepEqual(guardado.body, { nombre: "Pastelería Rainbow" }, "sin espacios de más");
+    assert.deepEqual((await api("GET", "/negocio")).body, { nombre: "Pastelería Rainbow" });
+    const { nombreDelNegocio } = await import("../src/services/negocio");
+    assert.equal(await nombreDelNegocio(), "Pastelería Rainbow", "lo usan los reportes y el correo");
+  });
+});
+
+// ---------- Descargar el Historial de ventas (D116) ----------
+
+describe("Descargar el Historial de ventas", () => {
+  const lista = {
+    titulo: "Historial de ventas 2026",
+    filtros: "Todo el año · Todas las ventas",
+    filas: [
+      { fecha: "2026-11-20T15:30:00.000Z", conHora: true, producto: "Torta de limón · 8 personas", cliente: "Ana Pérez", mayorista: false, cantidad: 1, total: 95, ganancia: 70, anulada: false },
+      { fecha: "2026-11-21T16:00:00.000Z", conHora: false, producto: "Pan de fibra · barra de 22 cm", cliente: null, mayorista: true, cantidad: 2, total: 110, ganancia: null, anulada: true },
+    ],
+  };
+  const bajar = (formato: string, cuerpo: unknown = lista) =>
+    fetch(`${base}/exportar/ventas?formato=${formato}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
+
+  test("baja la lista en Excel, Word y PDF", async () => {
+    for (const [formato, tipo, inicio] of [
+      ["xlsx", /spreadsheetml/, "PK"],
+      ["docx", /wordprocessingml/, "PK"],
+      ["pdf", /application\/pdf/, "%PDF"],
+    ] as const) {
+      const res = await bajar(formato);
+      assert.equal(res.status, 200, formato);
+      assert.match(res.headers.get("content-type") ?? "", tipo);
+      assert.match(res.headers.get("content-disposition") ?? "", new RegExp(`historial_de_ventas\\.${formato}`));
+      const bytes = Buffer.from(await res.arrayBuffer());
+      assert.equal(bytes.subarray(0, inicio.length).toString(), inicio, `${formato} válido`);
+    }
+  });
+
+  test("las anuladas no suman y se valida el formato", async () => {
+    const { totales } = await import("../src/services/exportarVentas");
+    assert.deepEqual(totales(lista.filas), { ventas: 1, total: 95, ganancia: 70, anuladas: 1 });
+    assert.equal((await bajar("odt")).status, 400);
+    assert.equal((await bajar("pdf", { titulo: "x", filtros: "", filas: [{ producto: "sin fecha" }] })).status, 400);
+  });
+});
+
 // ---------- Actualización desde GitHub (D112) ----------
 
 describe("Actualización", () => {
@@ -2950,6 +3124,12 @@ describe("Sesión con PIN", () => {
     assert.equal((await pedir("GET", "/clientes/por-celular/70000000", undefined, conClave)).status, 200);
     assert.equal((await pedir("GET", "/ventas", undefined, conClave)).status, 403, "no ve las ventas");
     assert.equal((await pedir("GET", "/productos", undefined, { "X-Clave-Agente": "otra" })).status, 403);
+  });
+
+  test("el nombre del negocio se lee sin PIN pero cambiarlo pide sesión (D117)", async () => {
+    cookie = "";
+    assert.equal((await pedir("GET", "/negocio")).status, 200);
+    assert.equal((await pedir("PUT", "/negocio", { nombre: "Otro nombre" })).status, 401);
   });
 
   test("la demo en línea entra sin PIN y no manda correos (D114)", async () => {

@@ -7,6 +7,7 @@ import { CategoriaGasto, Prisma } from "@prisma/client";
 // exceljs tarda ~1 s en cargarse: se trae recién al pedir un Excel, no al arrancar el ERP.
 import type { Workbook, Worksheet } from "exceljs";
 import { prisma } from "../prisma";
+import { nombreDelNegocio } from "./negocio";
 import { rangoFechas, sinVentasDemo } from "../routes/ventas";
 
 const cero = () => new Prisma.Decimal(0);
@@ -178,7 +179,8 @@ export async function reporteEnExcel(r: Reporte): Promise<Buffer> {
   const excel = await import("exceljs");
   const { Workbook: Libro } = "default" in excel ? (excel as unknown as { default: typeof excel }).default : excel;
   const libro = new Libro();
-  libro.creator = "ERP Dulzura Pastelería";
+  const negocio = await nombreDelNegocio();
+  libro.creator = `ERP ${negocio}`;
   libro.created = new Date();
   const periodo = `${fechaCorta(r.desde)} al ${fechaCorta(r.hasta)}`;
 
@@ -187,7 +189,7 @@ export async function reporteEnExcel(r: Reporte): Promise<Buffer> {
     { titulo: "Monto", ancho: 18, bs: true },
   ]);
   resumen.addRows([
-    ["Dulzura Pastelería · Reporte del " + periodo, null],
+    [`${negocio} · Reporte del ${periodo}`, null],
     [null, null],
     ["Ventas", num(r.resumen.ventas)],
     ["Costo de producción (insumos de las recetas)", num(r.resumen.costoProduccion)],

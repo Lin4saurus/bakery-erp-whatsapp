@@ -87,6 +87,12 @@
   box-sizing: border-box;
 }
 
+/* El lugar de la barra de deslizar queda siempre reservado (D123): al pasar de una pantalla corta a una larga
+   la barra de arriba y el contenido no saltan de lado. */
+html {
+  scrollbar-gutter: stable;
+}
+
 html,
 body {
   margin: 0;

@@ -55,6 +55,11 @@
   gap: 14px;
 }
 
+/* Dentro de una ventana (Cambiar PIN, nombre del negocio): el cuerpo no tiene márgenes propios. */
+.ventana__cuerpo > .bloqueo__form {
+  padding: var(--space-3);
+}
+
 .bloqueo__titulo {
   display: flex;
   align-items: center;

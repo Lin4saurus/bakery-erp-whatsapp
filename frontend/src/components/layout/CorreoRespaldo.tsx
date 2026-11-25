@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { api, mensajeDeError, type EstadoCorreo } from "../../api";
 import { Aviso, Button, Campo, Ventana } from "../../ui";
+import { useNombreNegocio } from "../../negocio";
 
 // Respaldo por correo (D111): la dueña escribe el Gmail del negocio y una contraseña de aplicación de Google.
 // Al guardar, el ERP prueba la conexión y manda el primer respaldo al momento.
@@ -13,6 +14,7 @@ export function CorreoRespaldo({
   cerrar: () => void;
   cambio: () => void;
 }) {
+  const negocio = useNombreNegocio();
   const [correo, setCorreo] = useState(estado?.correo ?? "");
   const [contrasena, setContrasena] = useState("");
   const [guardando, setGuardando] = useState(false);
@@ -55,7 +57,7 @@ export function CorreoRespaldo({
   };
 
   return (
-    <Ventana titulo="Respaldo por correo" subtitulo="Una copia de los datos en el Gmail del negocio, fuera de la portátil." cerrar={cerrar}>
+    <Ventana titulo="Respaldo por correo" subtitulo="Una copia de los datos en el Gmail del negocio, fuera de la portátil." cerrar={cerrar} mediana>
       {listo ? (
         <div className="correo-respaldo">
           <Aviso tipo={listo.startsWith("Listo") ? "ok" : "alerta"}>{listo}</Aviso>
@@ -71,7 +73,7 @@ export function CorreoRespaldo({
               Seguridad.
             </li>
             <li>
-              Entra a <strong>myaccount.google.com/apppasswords</strong>, escribe «Dulzura ERP» y toca Crear.
+              Entra a <strong>myaccount.google.com/apppasswords</strong>, escribe «ERP {negocio}» y toca Crear.
             </li>
             <li>Copia las 16 letras que muestra Google y pégalas aquí abajo.</li>
           </ol>

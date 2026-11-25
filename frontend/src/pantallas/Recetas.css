@@ -1,6 +1,7 @@
+/* La lista de productos crece con la pantalla (D120): nombres largos y tamaños sin apretarse. */
 .recetas {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: minmax(340px, 28%) minmax(0, 1fr);
   gap: var(--space-3);
   align-items: start;
 }
@@ -177,4 +178,93 @@
   margin: 0;
   padding-left: 20px;
   columns: 2;
+}
+
+/* Tamaños (D118): en la lista, el producto con varios tamaños se abre y muestra cada uno. */
+.lista-productos li button.lista-grupo-tamanos {
+  font-weight: 500;
+}
+
+.lista-productos--tamanos {
+  padding: 0 0 0 18px;
+}
+
+.lista-productos--tamanos li button {
+  padding-top: 5px;
+  padding-bottom: 5px;
+  font-size: 13px;
+}
+
+/* En el detalle: los tamaños del producto y «Agregar tamaño». */
+.recetas__tamanos {
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.recetas__tamanos-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  margin-bottom: 8px;
+}
+
+.recetas__tamanos-lista {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.recetas__tamano {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 104px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recetas__tamano strong {
+  font-size: 13px;
+}
+
+.recetas__tamano:hover {
+  background: var(--color-surface-muted);
+}
+
+.recetas__tamano--actual {
+  border-color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.recetas__tamanos-nota {
+  margin: 0;
+  font-size: 13px;
+}
+
+.recetas__tamano-nuevo {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.recetas__tamano-nuevo .formulario {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-2) 12px;
+}
+
+.lista-productos li button > .secundario,
+.lista-productos li button > .etiqueta {
+  flex: none;
+  white-space: nowrap;
 }
