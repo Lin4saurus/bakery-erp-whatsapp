@@ -16,11 +16,16 @@ export const numeroDelTamano = (tamano: string | null): number | null => {
   return m ? Number((m[1] as string).replace(",", ".")) : null;
 };
 
+// De menor a mayor: por el número del tamaño («2 personas» < «15 personas»); si no tienen número («personal»,
+// «familiar», «mega»), por precio, que en una pastelería sigue al tamaño.
 export const ordenarTamanos = (lista: Producto[]): Producto[] =>
   [...lista].sort((a, b) => {
     const na = numeroDelTamano(a.tamano);
     const nb = numeroDelTamano(b.tamano);
     if (na !== null && nb !== null && na !== nb) return na - nb;
+    const pa = Number(a.precioVenta ?? 0);
+    const pb = Number(b.precioVenta ?? 0);
+    if ((na === null || nb === null) && pa !== pb) return pa - pb;
     return (a.tamano ?? a.nombre).localeCompare(b.tamano ?? b.nombre, "es", { numeric: true, sensitivity: "base" });
   });
 

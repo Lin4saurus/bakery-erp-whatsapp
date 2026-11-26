@@ -504,3 +504,7 @@
 
 - Las tortas ya no son 52 botones: cada producto aparece una vez y el tamaño (2, 4, 8… personas, o el paquete) se elige en el pedido. En Recetas, cada producto muestra sus tamaños y se puede agregar uno nuevo copiando la receta.
 - La repostera puede cargar lo que vendió antes de usar el ERP desde el Historial de ventas: una por una o subiendo la plantilla de Excel (D121).
+
+## 2026-11-26 — Dos reposteras, un ERP (D126)
+
+- Volvió Dulzura. Cada repostera tiene su propio instalador con su catálogo ya cargado; las actualizaciones son las mismas para las dos y cada una conserva sus datos.

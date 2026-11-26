@@ -626,3 +626,10 @@ Decisión D44. Sin migración (el celular ya existía en `Cliente`).
 - [x] La barra de arriba ya no salta al aparecer la barra de deslizar (D123).
 - [x] Reporte impreso/PDF compacto en una hoja A4 (D124).
 - [x] Ventanas de Respaldo por correo y de Actualización con márgenes; el correo dice «ERP <nombre del negocio>».
+
+## Varias reposteras (D126, versión 1.1.1)
+
+- [x] Bases separadas: `datos/negocios/dulzura` (recuperada del respaldo 25-11 14:34, con tamaños agrupados) y `datos/negocios/rainbow`.
+- [x] `npm run negocio -- <id>` y `npm run paquete -- --negocio <id>`: un instalador por repostera.
+- [ ] Publicar la 1.1.1 y mandarle a cada una su instalador.
+- [ ] Asistente de primer uso (instalador vacío + catálogo desde Excel) para las próximas reposteras.

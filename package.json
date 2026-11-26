@@ -1,6 +1,6 @@
 {
   "name": "dulzura-erp",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "ERP local para la reposterÃƒÆ’Ã‚Â­a Dulzura",
   "prisma": {
@@ -17,6 +17,7 @@
     "backup": "tsx backend/src/backup.ts",
     "pin": "tsx backend/src/pin.ts",
     "paquete": "tsx instalacion/armar-paquete.ts",
+    "negocio": "tsx instalacion/negocio.ts",
     "whatsapp": "tsx backend/src/whatsapp.ts",
     "demo:pedidos": "tsx database/prisma/demo-pedidos.ts",
     "demo:pedidos:borrar": "tsx database/prisma/demo-pedidos.ts --borrar",

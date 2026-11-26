@@ -1,8 +1,9 @@
 // Arma el instalador del ERP para la portátil de la repostera (D108, D110) y las piezas que usa publicar.ts (D112).
-//   npm run paquete                 → instalador de la primera vez: con una copia de la base actual (sin PIN, demos ni WhatsApp)
-//   npm run paquete -- --sin-datos  → el mismo instalador sin base (no pisa la de ella si ya existe)
+//   npm run paquete -- --negocio rainbow → instalador de la primera vez para esa repostera, con una copia de SU base
+//                                          (database/prisma/datos/negocios/rainbow; sin PIN, demos ni WhatsApp; D126)
+//   npm run paquete -- --sin-datos       → el mismo instalador sin base (no pisa la de ella si ya existe)
 // Sale en ../dulzura-entrega (fuera del repo: la base tiene datos reales y no se sube a GitHub):
-//   DulzuraERP_Instalador_<versión>.exe  → lo que se le manda: doble clic, copia a C:\DulzuraERP e instala
+//   DulzuraERP_Instalador_<versión>_<Negocio>.exe → lo que se le manda: doble clic, copia a C:\DulzuraERP e instala
 //   DulzuraERP_<versión>.zip             → lo mismo sin el .exe, por si el antivirus no deja pasar el .exe
 // El paquete trae su propio Node.js (el de esta PC), las dependencias ya instaladas y las pantallas compiladas:
 // en la portátil no hace falta instalar nada ni tener internet. Después se actualiza solo desde GitHub (D112).
@@ -13,10 +14,12 @@ import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync,
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { buildSync } from "esbuild";
+import { baseDelNegocio, negocios, nombreEnLaBase } from "./negocio";
 
 export const RAIZ = path.resolve(__dirname, "..");
 export const SALIDA = path.resolve(RAIZ, "..", "dulzura-entrega");
-const BASE = path.join(RAIZ, "database", "prisma", "dulzura.db");
+// La base que se copia al instalador: la del negocio elegido con --negocio (D126).
+let BASE = "";
 const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
 
 export const paso = (texto: string) => console.log(`\n» ${texto}`);
@@ -210,11 +213,21 @@ function armarExe(zip: string, exe: string): void {
 async function main(): Promise<void> {
   if (SALIDA.includes(" ")) throw new Error(`La carpeta de salida no puede tener espacios (IExpress): ${SALIDA}`);
   const conDatos = !process.argv.includes("--sin-datos");
+  // Varias reposteras (D126): cada instalador lleva la base de una sola.
+  const negocio = process.argv[process.argv.indexOf("--negocio") + 1];
+  if (conDatos) {
+    const hay = negocios();
+    if (!process.argv.includes("--negocio") || !negocio || !hay.includes(negocio)) {
+      throw new Error(`Di de qué repostera es: npm run paquete -- --negocio <${hay.join(" | ")}> (o --sin-datos).`);
+    }
+    BASE = baseDelNegocio(negocio);
+  }
   const carpeta = path.join(SALIDA, "DulzuraERP");
   await prepararCarpeta(carpeta, { dependencias: true, datos: conDatos });
 
   paso("Comprimiendo");
-  const sufijo = `${versionActual()}${conDatos ? "" : "_sin-datos"}`;
+  const etiqueta = conDatos ? (negocio as string).charAt(0).toUpperCase() + (negocio as string).slice(1) : "sin-datos";
+  const sufijo = `${versionActual()}_${etiqueta}`;
   const zip = path.join(SALIDA, `DulzuraERP_${sufijo}.zip`);
   comprimir(carpeta, zip);
   rmSync(carpeta, { recursive: true, force: true });
@@ -223,7 +236,7 @@ async function main(): Promise<void> {
   const exe = path.join(SALIDA, `DulzuraERP_Instalador_${sufijo}.exe`);
   armarExe(zip, exe);
 
-  console.log(`\nListo, versión ${versionActual()} (${conDatos ? "con la base" : "sin datos"}):`);
+  console.log(`\nListo, versión ${versionActual()} (${conDatos ? `con la base de ${await nombreEnLaBase(negocio as string)}` : "sin datos"}):`);
   console.log(`  ${exe} (${mb(exe)})`);
   console.log(`  ${zip} (${mb(zip)})`);
 }

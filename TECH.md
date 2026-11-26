@@ -443,3 +443,9 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 - `routes/historico.ts`: `GET /plantilla`, `POST /anotar` {ventas} (todo o nada; 400 con `detalles` «fila N»), `POST /importar[?probar=1]` {nombre, archivo base64} (8 MB en `app.ts`). `AppError` acepta `detalles`.
 - Frontend: `pantallas/VentasAnteriores.tsx` (`UnaPorUna`, `DesdeExcel`); `Ventana` acepta `ancha` (1180 px).
 - Compras (D122): `registrarCompra` con `actualizarPrecio` (por defecto true en `POST /api/gastos`) recalcula `precioEnvase`: envases → monto / envases; cantidad → monto / cantidad × contenidoEnvase. Gastos.tsx muestra la casilla en los dos modos.
+
+## Varias reposteras (D126)
+
+- `instalacion/negocio.ts`: `CARPETA_NEGOCIOS`, `baseDelNegocio(id)`, `negocios()`, `nombreEnLaBase(id)`; el CLI reescribe `DATABASE_URL="file:./datos/negocios/<id>/dulzura.db"` y `BACKUP_DIR="backups/<id>"` en `.env`.
+- `instalacion/armar-paquete.ts`: `--negocio <id>` obligatorio salvo `--sin-datos`; `BASE` pasa a ser la base de ese negocio; el sufijo del .exe/.zip es `<versión>_<Negocio>`.
+- `frontend/src/tamanos.ts` → `ordenarTamanos`: por número; si falta, por precio.
