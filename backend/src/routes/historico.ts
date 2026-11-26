@@ -10,7 +10,8 @@ const fechaDia = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Usa el formato AAAA-MM-DD.")
   .optional();
-const filtrosSchema = z.object({ desde: fechaDia, hasta: fechaDia });
+// clienteId (D127): el historial de un cliente pide solo lo suyo, no todas las ventas.
+const filtrosSchema = z.object({ desde: fechaDia, hasta: fechaDia, clienteId: z.string().min(1).max(64).optional() });
 
 // Corrección desde el Historial (D43).
 const editarSchema = z
@@ -71,13 +72,13 @@ export const historicoRouter = Router();
 // Ventas importadas del Excel (CONTEXT.md D24), con totales generales, por semana y por producto.
 // Filtros opcionales por día (hora local), ambos inclusive. Solo lectura.
 historicoRouter.get("/", async (req, res) => {
-  const { desde, hasta } = filtrosSchema.parse(req.query);
+  const { desde, hasta, clienteId } = filtrosSchema.parse(req.query);
   const fecha: Prisma.DateTimeFilter = {};
   if (desde) fecha.gte = new Date(`${desde}T00:00:00`);
   if (hasta) fecha.lte = new Date(`${hasta}T23:59:59.999`);
 
   const conCliente = await prisma.ventaHistorica.findMany({
-    where: { fecha, eliminada: false },
+    where: { fecha, eliminada: false, ...(clienteId ? { clienteId } : {}) },
     include: { clienteRegistrado: { select: { tipo: true } }, producto: { select: { categoria: true } } },
     orderBy: [{ fecha: "asc" }, { hoja: "asc" }, { fila: "asc" }, { linea: "asc" }],
   });

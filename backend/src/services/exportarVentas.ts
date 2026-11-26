@@ -1,5 +1,6 @@
 // Descargas del Historial de ventas (D116): la lista tal como la dueña la está viendo (con sus filtros) en Excel,
 // Word o PDF. Las tres librerías se cargan recién al descargar, para no alargar el arranque del ERP (D113).
+import { nuevoLibro } from "./excel";
 
 export interface FilaVenta {
   fecha: string; // ISO
@@ -57,9 +58,7 @@ const resumen = (lista: ListaVentas) => {
 // ---------- Excel ----------
 
 export async function ventasEnExcel(lista: ListaVentas): Promise<Buffer> {
-  const excel = await import("exceljs");
-  const { Workbook } = "default" in excel ? (excel as unknown as { default: typeof excel }).default : excel;
-  const libro = new Workbook();
+  const libro = await nuevoLibro();
   const hoja = libro.addWorksheet("Ventas");
   hoja.addRow([lista.titulo]).font = { bold: true, size: 14 };
   hoja.addRow([lista.filtros]);

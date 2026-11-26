@@ -358,8 +358,8 @@ function FormularioCliente({
 
 // Compras del cliente en una ventana emergente: las de la Caja y las del historial (Excel y notas).
 function HistorialCliente({ cliente, cerrar }: { cliente: Cliente; cerrar: () => void }) {
-  const ventas = useDatos(api.ventasTodas);
-  const historico = useDatos(() => api.historico());
+  const ventas = useDatos(() => api.ventasDeCliente(cliente.id), [cliente.id]);
+  const historico = useDatos(() => api.historicoDeCliente(cliente.id), [cliente.id]);
   const filas = [
     ...(ventas.datos?.ventas ?? [])
       .filter((v) => v.clienteId === cliente.id && !v.anulada)

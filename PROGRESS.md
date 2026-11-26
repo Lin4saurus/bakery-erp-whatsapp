@@ -508,3 +508,7 @@
 ## 2026-11-26 — Dos reposteras, un ERP (D126)
 
 - Volvió Dulzura. Cada repostera tiene su propio instalador con su catálogo ya cargado; las actualizaciones son las mismas para las dos y cada una conserva sus datos.
+
+## 2026-11-26 — Más rápido y más liviano (D127)
+
+- El Historial y el historial de cada cliente traen solo lo que se mira, así siguen rápidos aunque se junten años de ventas. La pantalla pesa un tercio menos y el instalador de 150 a 86 MB por instalador, −42 %.

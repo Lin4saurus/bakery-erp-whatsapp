@@ -2844,7 +2844,7 @@ describe("Reporte del periodo", () => {
     const res = await fetch(`${base}/reportes/excel?desde=2026-11-01&hasta=2026-11-30`);
     assert.equal(res.status, 200);
     assert.match(res.headers.get("content-type") ?? "", /spreadsheetml/);
-    assert.match(res.headers.get("content-disposition") ?? "", /dulzura_reporte_2026-11-01_al_2026-11-30\.xlsx/);
+    assert.match(res.headers.get("content-disposition") ?? "", /reporte_2026-11-01_al_2026-11-30\.xlsx/);
     const bytes = Buffer.from(await res.arrayBuffer());
     assert.equal(bytes.subarray(0, 2).toString(), "PK", "un .xlsx es un zip");
   });

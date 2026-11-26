@@ -449,3 +449,11 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 - `instalacion/negocio.ts`: `CARPETA_NEGOCIOS`, `baseDelNegocio(id)`, `negocios()`, `nombreEnLaBase(id)`; el CLI reescribe `DATABASE_URL="file:./datos/negocios/<id>/dulzura.db"` y `BACKUP_DIR="backups/<id>"` en `.env`.
 - `instalacion/armar-paquete.ts`: `--negocio <id>` obligatorio salvo `--sin-datos`; `BASE` pasa a ser la base de ese negocio; el sufijo del .exe/.zip es `<versión>_<Negocio>`.
 - `frontend/src/tamanos.ts` → `ordenarTamanos`: por número; si falta, por precio.
+
+## Optimización (D127)
+
+- `GET /api/ventas/anios` → `[{ anio, total }]` (Caja + anteriores, sin anuladas ni demos). `GET /api/ventas` y `GET /api/historico` aceptan `clienteId`. `GET /api/reportes` omite `ventas` (solo el Excel la usa).
+- `Historial.tsx`: pide `${anio-1}-12-25` a `${anio+1}-01-07`; cada respuesta lleva su `anio` para no mostrar la del año anterior mientras carga.
+- `instalacion/armar-paquete.ts` → `podarPaquete` (listas `CARPETAS_QUE_SOBRAN`, `ARCHIVOS_QUE_SOBRAN`, `*.map`, archivos de Prisma `*.{cockroachdb,postgresql,mysql,sqlserver}.*`); `instalar.bat` comprueba `backend/js/server.js` y el CLI de Prisma en vez de tsx.
+- `instalacion/verificar-paquete.ts`: los hijos corren con un entorno sin `DATABASE_URL`/`BACKUP_DIR` (Prisma carga el `.env` de la PC en el proceso que lo importa).
+- `backend/src/services/excel.ts` → `nuevoLibro()`. `frontend/src/api.ts` → `llamar`, `errorDe`, `pedirArchivo`, `guardarArchivo`.

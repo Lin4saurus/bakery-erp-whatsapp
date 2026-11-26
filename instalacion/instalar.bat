@@ -13,7 +13,9 @@ echo.
 rem El paquete trae su propio Node.js y sus componentes: no hace falta instalar nada ni tener internet (D110).
 set "NODE=%CD%\node\node.exe"
 if not exist "%NODE%" goto incompleto
-if not exist "node_modules\tsx\dist\cli.mjs" goto incompleto
+rem El servidor va compilado (D113) y tsx ya no viaja en el paquete (D127).
+if not exist "backend\js\server.js" goto incompleto
+if not exist "node_modules\prisma\build\index.js" goto incompleto
 if not exist "frontend\dist\index.html" goto incompleto
 
 rem Si el ERP ya estaba prendido (al actualizar), se apaga para poder reemplazar sus archivos.

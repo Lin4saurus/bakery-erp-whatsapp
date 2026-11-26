@@ -18,13 +18,15 @@ export const reportesRouter = Router();
 
 reportesRouter.get("/", async (req, res) => {
   const { desde, hasta } = leerPeriodo(req.query);
-  res.json(await armarReporte(desde, hasta));
+  // La lista de cada venta solo va en el Excel (D127): en un año son cientos de KB que la pantalla no muestra.
+  const { ventas: _soloExcel, ...reporte } = await armarReporte(desde, hasta);
+  res.json(reporte);
 });
 
 reportesRouter.get("/excel", async (req, res) => {
   const { desde, hasta } = leerPeriodo(req.query);
   const archivo = await reporteEnExcel(await armarReporte(desde, hasta));
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="dulzura_reporte_${desde}_al_${hasta}.xlsx"`);
+  res.setHeader("Content-Disposition", `attachment; filename="reporte_${desde}_al_${hasta}.xlsx"`);
   res.send(archivo);
 });

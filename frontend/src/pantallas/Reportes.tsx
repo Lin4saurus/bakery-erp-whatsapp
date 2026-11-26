@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MdOutlineFileDownload, MdOutlinePrint } from "react-icons/md";
-import { api, mensajeDeError, type Reporte } from "../api";
+import { api, guardarArchivo, mensajeDeError } from "../api";
 import { bs, cantidad, hoyISO } from "../formato";
 import { Aviso, Button, Campo, Cargando, Panel, Tarjeta, useDatos } from "../ui";
 import { useNombreNegocio } from "../negocio";
@@ -37,13 +37,7 @@ export function Reportes() {
     setBajando(true);
     setError(null);
     try {
-      const archivo = await api.reporteExcel(periodo.desde, periodo.hasta);
-      const url = URL.createObjectURL(archivo);
-      const enlace = document.createElement("a");
-      enlace.href = url;
-      enlace.download = `dulzura_reporte_${periodo.desde}_al_${periodo.hasta}.xlsx`;
-      enlace.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      guardarArchivo(await api.reporteExcel(periodo.desde, periodo.hasta), `reporte_${periodo.desde}_al_${periodo.hasta}.xlsx`);
     } catch (e) {
       setError(mensajeDeError(e));
     } finally {

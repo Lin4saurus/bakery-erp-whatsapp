@@ -1,6 +1,7 @@
-@import "@fontsource/ibm-plex-sans/400.css";
-@import "@fontsource/ibm-plex-sans/500.css";
-@import "@fontsource/ibm-plex-sans/600.css";
+/* Solo el alfabeto latino (D127): español completo (á, ñ, ü, ¿, ·); sin cirílico, griego ni vietnamita. */
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
 
 :root,
 :root[data-theme="light"] {

@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { calcularCostoProducto, precargarCosteo } from "./costeo";
 import { normalizarNombre } from "../validacion";
+import { nuevoLibro } from "./excel";
 
 export interface FilaAnterior {
   fecha: string; // AAAA-MM-DD
@@ -89,14 +90,8 @@ export async function guardarFilas(filas: FilaRevisada[], origen: string): Promi
 
 const COLUMNAS = ["Fecha", "Producto", "Tamaño", "Cantidad", "Total (Bs)", "Cliente"] as const;
 
-async function libroExcel() {
-  const excel = await import("exceljs");
-  return "default" in excel ? (excel as unknown as { default: typeof excel }).default : excel;
-}
-
 export async function plantillaExcel(): Promise<Buffer> {
-  const { Workbook } = await libroExcel();
-  const libro = new Workbook();
+  const libro = await nuevoLibro();
   const hoja = libro.addWorksheet("Ventas anteriores");
   hoja.addRow([...COLUMNAS]).font = { bold: true };
   const productos = await prisma.producto.findMany({ where: { tipo: "VENTA", eliminado: false }, orderBy: [{ categoria: "asc" }, { nombre: "asc" }] });
@@ -159,8 +154,7 @@ const fecha = (v: unknown): string => {
 };
 
 export async function leerExcel(archivo: Buffer): Promise<(FilaAnterior & { numero: number })[]> {
-  const { Workbook } = await libroExcel();
-  const libro = new Workbook();
+  const libro = await nuevoLibro();
   // exceljs pide el tipo Buffer de su propia versión de Node.
   await libro.xlsx.load(archivo as unknown as Parameters<typeof libro.xlsx.load>[0]);
   const hoja = libro.worksheets[0];

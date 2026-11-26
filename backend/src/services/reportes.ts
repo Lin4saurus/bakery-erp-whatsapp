@@ -8,6 +8,7 @@ import { CategoriaGasto, Prisma } from "@prisma/client";
 import type { Workbook, Worksheet } from "exceljs";
 import { prisma } from "../prisma";
 import { nombreDelNegocio } from "./negocio";
+import { nuevoLibro } from "./excel";
 import { rangoFechas, sinVentasDemo } from "../routes/ventas";
 
 const cero = () => new Prisma.Decimal(0);
@@ -175,10 +176,7 @@ function filaTotal(h: Worksheet, valores: (string | number | null)[]) {
 }
 
 export async function reporteEnExcel(r: Reporte): Promise<Buffer> {
-  // exceljs es CommonJS: al importarlo así, sus clases quedan en `default`.
-  const excel = await import("exceljs");
-  const { Workbook: Libro } = "default" in excel ? (excel as unknown as { default: typeof excel }).default : excel;
-  const libro = new Libro();
+  const libro = await nuevoLibro();
   const negocio = await nombreDelNegocio();
   libro.creator = `ERP ${negocio}`;
   libro.created = new Date();

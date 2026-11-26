@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { MdOutlineFileDownload, MdOutlineUploadFile } from "react-icons/md";
-import { api, mensajeDeError, ApiError, type VentaAnterior, type VentaAnteriorRevisada } from "../api";
+import { api, guardarArchivo, mensajeDeError, ApiError, type VentaAnterior, type VentaAnteriorRevisada } from "../api";
 import { bs, esNumeroValido, hoyISO, normalizarNumero } from "../formato";
-import { Aviso, Button, Campo, Opciones, Ventana, useDatos } from "../ui";
+import { Aviso, Button, Opciones, Ventana, useDatos } from "../ui";
 import "./VentasAnteriores.css";
 
 // Ventas de antes del ERP (D121): la dueña agrega lo que vendió antes de usar el ERP, una por una o con la plantilla
@@ -249,14 +249,7 @@ function DesdeExcel({ listo }: { listo: (anio: number, mensaje: string) => Promi
     setTrabajando("plantilla");
     setError(null);
     try {
-      const respuesta = await fetch("/api/historico/plantilla");
-      if (!respuesta.ok) throw new Error("No se pudo bajar la plantilla.");
-      const url = URL.createObjectURL(await respuesta.blob());
-      const enlace = document.createElement("a");
-      enlace.href = url;
-      enlace.download = "plantilla_ventas_anteriores.xlsx";
-      enlace.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      guardarArchivo(await api.plantillaVentasAnteriores(), "plantilla_ventas_anteriores.xlsx");
     } catch (e) {
       setError(mensajeDeError(e));
     } finally {

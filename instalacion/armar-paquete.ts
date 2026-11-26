@@ -20,6 +20,9 @@ export const RAIZ = path.resolve(__dirname, "..");
 export const SALIDA = path.resolve(RAIZ, "..", "dulzura-entrega");
 // La base que se copia al instalador: la del negocio elegido con --negocio (D126).
 let BASE = "";
+export const elegirBase = (negocio: string) => {
+  BASE = baseDelNegocio(negocio);
+};
 const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
 
 export const paso = (texto: string) => console.log(`\n» ${texto}`);
@@ -135,6 +138,55 @@ export async function prepararCarpeta(carpeta: string, { dependencias, datos }: 
     paso("Copiando la base de datos (sin PIN, demos, WhatsApp ni correo)");
     await copiarBase(path.join(carpeta, "database", "prisma", "dulzura.db"));
   }
+
+  paso("Quitando lo que la portátil no usa");
+  console.log(`  ${(podarPaquete(carpeta) / 1024 / 1024).toFixed(1)} MB menos`);
+}
+
+// ---------- Poda del paquete (D127) ----------
+// npm instala Prisma para todas las bases (PostgreSQL, MySQL, SQL Server…), cachés de descarga, mapas de depuración,
+// los paquetes de navegador de exceljs y pdfkit, TypeScript… Nada de eso se usa en la portátil: el ERP corre con
+// SQLite y el servidor ya compilado. Se borra solo lo que está en esta lista; si una librería cambia, lo que no
+// coincida simplemente queda. `verificar-paquete.ts` prueba el paquete podado de punta a punta.
+const OTRAS_BASES = /\.(cockroachdb|postgresql|mysql|sqlserver)\./;
+const CARPETAS_QUE_SOBRAN = [
+  "node_modules/.cache", // copias de descarga del motor de Prisma (21 MB cada una)
+  "node_modules/@prisma/engines/node_modules/.cache",
+  "node_modules/typescript", // la pide Prisma solo para prisma.config.ts, que el ERP no usa
+  "node_modules/@types",
+  "node_modules/exceljs/dist", // versión para navegador; en Node se usa exceljs/lib
+  "node_modules/prisma/build/public", // Prisma Studio
+  // El código fuente ya va compilado (backend/js, frontend/dist) y lo de desarrollo no se usa en la portátil.
+  "backend/src",
+  "backend/test",
+  "frontend/src",
+  "demo",
+  "api",
+];
+const ARCHIVOS_QUE_SOBRAN = ["node_modules/pdfkit/js/pdfkit.standalone.js", "vercel.json", "frontend/index.html", "tsconfig.json", "frontend/tsconfig.json", "frontend/vite.config.ts"];
+
+function pesoDe(ruta: string): number {
+  if (!existsSync(ruta)) return 0;
+  const info = statSync(ruta);
+  if (!info.isDirectory()) return info.size;
+  return readdirSync(ruta).reduce((total, nombre) => total + pesoDe(path.join(ruta, nombre)), 0);
+}
+
+export function podarPaquete(carpeta: string): number {
+  const antes = pesoDe(carpeta);
+  for (const r of [...CARPETAS_QUE_SOBRAN, ...ARCHIVOS_QUE_SOBRAN]) rmSync(path.join(carpeta, r), { recursive: true, force: true });
+  // Los documentos del proyecto (CONTEXT.md, TECH.md…) no hacen falta; el LEEME va aparte.
+  for (const f of readdirSync(carpeta)) if (f.endsWith(".md")) rmSync(path.join(carpeta, f), { force: true });
+  // Mapas de depuración y versiones de Prisma para otras bases, en todo node_modules.
+  const recorrer = (dir: string) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const ruta = path.join(dir, e.name);
+      if (e.isDirectory()) recorrer(ruta);
+      else if (e.name.endsWith(".map") || (OTRAS_BASES.test(e.name) && /prisma/.test(ruta))) rmSync(ruta, { force: true });
+    }
+  };
+  if (existsSync(path.join(carpeta, "node_modules"))) recorrer(path.join(carpeta, "node_modules"));
+  return antes - pesoDe(carpeta);
 }
 
 // Comprime `carpeta` (que se llama DulzuraERP) en `zip`, con la carpeta adentro.

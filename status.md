@@ -633,3 +633,10 @@ Decisión D44. Sin migración (el celular ya existía en `Cliente`).
 - [x] `npm run negocio -- <id>` y `npm run paquete -- --negocio <id>`: un instalador por repostera.
 - [ ] Publicar la 1.1.1 y mandarle a cada una su instalador.
 - [ ] Asistente de primer uso (instalador vacío + catálogo desde Excel) para las próximas reposteras.
+
+## Optimización general (D127)
+
+- [x] Fuentes solo latinas: pantalla compilada 808 → 527 KB.
+- [x] Historial por año, historial de cliente filtrado y reporte sin la lista de ventas (medido con ~7.600 ventas).
+- [x] Paquete podado y verificado de punta a punta (de 150 a 86 MB por instalador, −42 %); tsx solo en desarrollo.
+- [x] Sin código repetido en las descargas ni en la carga de exceljs; `noUnusedLocals` en los dos tsconfig. 133/133 tests.

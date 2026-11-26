@@ -48,7 +48,8 @@ const ventaSchema = z
 const faltaDato = (campo: string, mensaje: string) =>
   new z.ZodError([{ code: z.ZodIssueCode.custom, path: [campo], message: mensaje }]);
 
-const filtrosSchema = z.object({ desde: fechaDia, hasta: fechaDia });
+// clienteId (D127): el historial de un cliente pide solo lo suyo, no todas las ventas.
+const filtrosSchema = z.object({ desde: fechaDia, hasta: fechaDia, clienteId: z.string().min(1).max(64).optional() });
 
 // Corrección desde el Historial (D43): cantidad, precio y día.
 const editarSchema = z
@@ -358,9 +359,9 @@ export async function sinVentasDemo(): Promise<Prisma.VentaWhereInput> {
 
 // Lista de ventas con totales. Filtros opcionales por día (hora local), ambos inclusive.
 ventasRouter.get("/", async (req, res) => {
-  const { desde, hasta } = filtrosSchema.parse(req.query);
+  const { desde, hasta, clienteId } = filtrosSchema.parse(req.query);
   const ventas = await prisma.venta.findMany({
-    where: { fecha: rangoFechas(desde, hasta), ...(await sinVentasDemo()) },
+    where: { fecha: rangoFechas(desde, hasta), ...(clienteId ? { clienteId } : {}), ...(await sinVentasDemo()) },
     include: conCliente,
     orderBy: { fecha: "desc" },
   });
@@ -388,6 +389,21 @@ ventasRouter.get("/", async (req, res) => {
   };
 
   res.json({ resumen, ventas: ventas.map(plana) });
+});
+
+// Total vendido por año (D127), Caja y anotadas antes del sistema juntas, sin anuladas ni demos. Lo usa el selector de
+// año del Historial: así la pantalla baja solo las ventas del año que se mira, no todas desde el principio.
+ventasRouter.get("/anios", async (_req, res) => {
+  const [caja, anteriores] = await Promise.all([
+    prisma.venta.findMany({ where: { anulada: false, ...(await sinVentasDemo()) }, select: { fecha: true, totalVenta: true } }),
+    prisma.ventaHistorica.findMany({ where: { eliminada: false }, select: { fecha: true, valor: true } }),
+  ]);
+  const porAnio = new Map<number, Prisma.Decimal>();
+  const sumar = (fecha: Date, monto: Prisma.Decimal) =>
+    porAnio.set(fecha.getFullYear(), (porAnio.get(fecha.getFullYear()) ?? new Prisma.Decimal(0)).add(monto));
+  for (const v of caja) sumar(v.fecha, v.totalVenta);
+  for (const v of anteriores) sumar(v.fecha, v.valor);
+  res.json([...porAnio].sort(([a], [b]) => b - a).map(([anio, total]) => ({ anio, total })));
 });
 
 // Por cliente registrado: total vendido y cantidad de ventas en el período, y último pedido (de siempre).

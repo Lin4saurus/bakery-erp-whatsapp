@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState, type FormEvent } from "react";
 import { MdChevronLeft, MdChevronRight, MdDeleteOutline, MdOutlineEdit, MdOutlineFileDownload } from "react-icons/md";
-import { api, mensajeDeError, type FormatoDescarga, type TipoCliente } from "../api";
+import { api, guardarArchivo, mensajeDeError, type FormatoDescarga, type TipoCliente } from "../api";
 import { BarChart, type Barra } from "../components/charts/BarChart";
 import { bs, cantidad, esNumeroValido, fechaCorta, hora, hoyISO, nombreCorto, normalizarNumero } from "../formato";
 import { Aviso, Button, Campo, Cargando, Panel, Tarjeta, TipoClienteBadge, useDatos } from "../ui";
@@ -73,12 +73,20 @@ type Vista = "desempeno" | "ventas";
 export const Desempeno = () => <Historial vista="desempeno" />;
 
 export function Historial({ vista = "ventas" }: { vista?: Vista }) {
-  const caja = useDatos(() => api.ventas(`${PRIMER_ANIO}-01-01`, hoyISO()));
-  const anteriores = useDatos(() => api.historico());
+  const anioActual = new Date().getFullYear();
+  const [anio, setAnio] = useState(anioActual);
+  // Solo el año que se mira (D127), más una semana de cada lado porque la semana del gráfico puede cruzar el año.
+  // Antes se bajaban todas las ventas desde 2020: con 3 años eran 3 MB y medio segundo en cada visita.
+  const desde = `${anio - 1}-12-25`;
+  const hasta = `${anio + 1}-01-07`;
+  // Cada respuesta dice de qué año es: al cambiar de año no se muestran un instante las del año anterior.
+  const caja = useDatos(async () => ({ anio, lista: await api.ventas(desde, hasta) }), [anio]);
+  const anteriores = useDatos(async () => ({ anio, lista: await api.historico(desde, hasta) }), [anio]);
+  const totalesPorAnio = useDatos(api.ventasPorAnio);
 
   const filas: Fila[] | null = useMemo(() => {
-    if (!caja.datos || !anteriores.datos) return null;
-    const deCaja: Fila[] = caja.datos.ventas.map((v) => ({
+    if (caja.datos?.anio !== anio || anteriores.datos?.anio !== anio) return null;
+    const deCaja: Fila[] = caja.datos.lista.ventas.map((v) => ({
       clave: `c${v.id}`,
       id: v.id,
       clienteId: v.clienteId,
@@ -97,7 +105,7 @@ export function Historial({ vista = "ventas" }: { vista?: Vista }) {
       pedidoId: v.pedidoId,
       familia: v.familia ?? null,
     }));
-    const previas: Fila[] = anteriores.datos.ventas.map((v) => ({
+    const previas: Fila[] = anteriores.datos.lista.ventas.map((v) => ({
       clave: `h${v.id}`,
       id: v.id,
       clienteId: v.clienteId,
@@ -117,13 +125,15 @@ export function Historial({ vista = "ventas" }: { vista?: Vista }) {
       familia: v.familia,
     }));
     return [...deCaja, ...previas].sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
-  }, [caja.datos, anteriores.datos]);
+  }, [caja.datos, anteriores.datos, anio]);
 
-  const anioActual = new Date().getFullYear();
   // Del más reciente al más viejo: el año que más se consulta queda arriba en la lista.
   const anios = Array.from({ length: anioActual - PRIMER_ANIO + 1 }, (_, i) => anioActual - i);
-  const [anio, setAnio] = useState(anioActual);
+  const totalDelAnio = new Map((totalesPorAnio.datos ?? []).map((t) => [t.anio, Number(t.total)]));
   const error = caja.error ?? anteriores.error;
+  const recargarTodo = async () => {
+    await Promise.all([caja.recargar(), anteriores.recargar(), totalesPorAnio.recargar()]);
+  };
   const [agregando, setAgregando] = useState(false); // ventas de antes del ERP (D121)
   const [avisoAnteriores, setAvisoAnteriores] = useState<string | null>(null);
 
@@ -146,12 +156,7 @@ export function Historial({ vista = "ventas" }: { vista?: Vista }) {
           <span className="secundario">Año</span>
           <select value={anio} onChange={(e) => setAnio(Number(e.target.value))} aria-label="Año a consultar">
             {anios.map((a) => {
-              const total = filas
-                ? sumar(
-                    filas.filter((f) => !f.anulada && f.fecha.getFullYear() === a),
-                    (f) => f.total,
-                  )
-                : 0;
+              const total = totalDelAnio.get(a) ?? 0;
               return (
                 <option key={a} value={a}>
                   {a} · {total > 0 ? bs(total) : "sin ventas"}
@@ -168,7 +173,7 @@ export function Historial({ vista = "ventas" }: { vista?: Vista }) {
         <VentasAnteriores
           cerrar={() => setAgregando(false)}
           listo={async (anioNuevo, texto) => {
-            await Promise.all([caja.recargar(), anteriores.recargar()]);
+            await recargarTodo();
             setAgregando(false);
             setAnio(anioNuevo);
             setAvisoAnteriores(texto);
@@ -184,9 +189,7 @@ export function Historial({ vista = "ventas" }: { vista?: Vista }) {
           anio={anio}
           filas={filas.filter((f) => f.fecha.getFullYear() === anio)}
           todas={filas}
-          alCambiar={async () => {
-            await Promise.all([caja.recargar(), anteriores.recargar()]);
-          }}
+          alCambiar={recargarTodo}
           agregarAnteriores={() => setAgregando(true)}
         />
       )}
@@ -915,12 +918,7 @@ function DescargarVentas({ filas, titulo, archivo: nombreArchivo, filtros }: { f
           anulada: f.anulada,
         })),
       });
-      const url = URL.createObjectURL(archivo);
-      const enlace = document.createElement("a");
-      enlace.href = url;
-      enlace.download = `${nombreArchivo}.${formato}`;
-      enlace.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      guardarArchivo(archivo, `${nombreArchivo}.${formato}`);
     } catch (e) {
       setError(mensajeDeError(e));
     } finally {

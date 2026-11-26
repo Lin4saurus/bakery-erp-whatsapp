@@ -498,10 +498,9 @@ function pedir<T>(metodo: string, ruta: string, cuerpo?: unknown): Promise<T> {
   return promesa;
 }
 
-async function pedirAlServidor<T>(metodo: string, ruta: string, cuerpo?: unknown): Promise<T> {
-  let respuesta: Response;
+async function llamar(metodo: string, ruta: string, cuerpo?: unknown): Promise<Response> {
   try {
-    respuesta = await fetch(`/api${ruta}`, {
+    return await fetch(`/api${ruta}`, {
       method: metodo,
       headers: cuerpo === undefined ? undefined : { "Content-Type": "application/json" },
       body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
@@ -509,14 +508,38 @@ async function pedirAlServidor<T>(metodo: string, ruta: string, cuerpo?: unknown
   } catch {
     throw new ApiError("No se pudo conectar con el servidor. ¿Está encendida la API?", 0);
   }
+}
+
+// El error del servidor como ApiError; si la sesión se cerró, avisa para que aparezca la pantalla del PIN.
+function errorDe(respuesta: Response, cuerpo: unknown): ApiError {
+  const error = (cuerpo ?? {}) as CuerpoError;
+  if (respuesta.status === 401 && error.sesion === "bloqueado") window.dispatchEvent(new Event(EVENTO_BLOQUEADO));
+  return new ApiError(error.error ?? `Error ${respuesta.status}`, respuesta.status, error.detalles ?? []);
+}
+
+async function pedirAlServidor<T>(metodo: string, ruta: string, cuerpo?: unknown): Promise<T> {
+  const respuesta = await llamar(metodo, ruta, cuerpo);
   if (respuesta.status === 204) return undefined as T;
   const datos: unknown = await respuesta.json().catch(() => null);
-  if (!respuesta.ok) {
-    const error = (datos ?? {}) as CuerpoError;
-    if (respuesta.status === 401 && error.sesion === "bloqueado") window.dispatchEvent(new Event(EVENTO_BLOQUEADO));
-    throw new ApiError(error.error ?? `Error ${respuesta.status}`, respuesta.status, error.detalles ?? []);
-  }
+  if (!respuesta.ok) throw errorDe(respuesta, datos);
   return datos as T;
+}
+
+// Un archivo para bajar (Excel, Word, PDF; D127): con cuerpo va por POST. Mismos errores y sesión que pedir().
+async function pedirArchivo(ruta: string, cuerpo?: unknown): Promise<Blob> {
+  const respuesta = await llamar(cuerpo === undefined ? "GET" : "POST", ruta, cuerpo);
+  if (!respuesta.ok) throw errorDe(respuesta, await respuesta.json().catch(() => null));
+  return respuesta.blob();
+}
+
+// Guarda un archivo bajado con su nombre (queda en Descargas).
+export function guardarArchivo(archivo: Blob, nombre: string): void {
+  const url = URL.createObjectURL(archivo);
+  const enlace = document.createElement("a");
+  enlace.href = url;
+  enlace.download = nombre;
+  enlace.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 // Nombre de cada campo como lo ve la dueña (U4, AUDITORIA.md): «lineas.0.cantidad» → «Producto 1 · Cantidad».
@@ -589,33 +612,10 @@ export const api = {
   // ---------- Reportes (D106) ----------
   reporte: (desde: string, hasta: string) =>
     pedir<Reporte>("GET", `/reportes?${new URLSearchParams({ desde, hasta }).toString()}`),
-  reporteExcel: async (desde: string, hasta: string): Promise<Blob> => {
-    const respuesta = await fetch(`/api/reportes/excel?${new URLSearchParams({ desde, hasta }).toString()}`).catch(() => {
-      throw new ApiError("No se pudo conectar con el servidor. ¿Está encendida la API?", 0);
-    });
-    if (!respuesta.ok) {
-      const error = ((await respuesta.json().catch(() => null)) ?? {}) as CuerpoError;
-      if (respuesta.status === 401 && error.sesion === "bloqueado") window.dispatchEvent(new Event(EVENTO_BLOQUEADO));
-      throw new ApiError(error.error ?? `Error ${respuesta.status}`, respuesta.status, error.detalles ?? []);
-    }
-    return respuesta.blob();
-  },
+  reporteExcel: (desde: string, hasta: string) => pedirArchivo(`/reportes/excel?${new URLSearchParams({ desde, hasta }).toString()}`),
   // Historial de ventas en Excel, Word o PDF (D116): se manda la lista que se está viendo.
-  exportarVentas: async (formato: FormatoDescarga, lista: ListaParaDescargar): Promise<Blob> => {
-    const respuesta = await fetch(`/api/exportar/ventas?formato=${formato}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(lista),
-    }).catch(() => {
-      throw new ApiError("No se pudo conectar con el servidor. ¿Está encendida la API?", 0);
-    });
-    if (!respuesta.ok) {
-      const error = ((await respuesta.json().catch(() => null)) ?? {}) as CuerpoError;
-      if (respuesta.status === 401 && error.sesion === "bloqueado") window.dispatchEvent(new Event(EVENTO_BLOQUEADO));
-      throw new ApiError(error.error ?? `Error ${respuesta.status}`, respuesta.status, error.detalles ?? []);
-    }
-    return respuesta.blob();
-  },
+  exportarVentas: (formato: FormatoDescarga, lista: ListaParaDescargar) => pedirArchivo(`/exportar/ventas?formato=${formato}`, lista),
+  plantillaVentasAnteriores: () => pedirArchivo("/historico/plantilla"), // D121
   insumos: () => pedir<Insumo[]>("GET", "/insumos"),
   crearInsumo: (datos: DatosInsumo) => pedir<Insumo>("POST", "/insumos", datos),
   actualizarInsumo: (id: number, datos: Partial<DatosInsumo>) => pedir<Insumo>("PATCH", `/insumos/${id}`, datos),
@@ -647,6 +647,7 @@ export const api = {
   guardarReceta: (id: number, receta: Receta) => pedir<CostoProducto>("PUT", `/productos/${id}/receta`, receta),
 
   ventas: (desde: string, hasta: string) => pedir<ListaVentas>("GET", `/ventas?desde=${desde}&hasta=${hasta}`),
+  ventasPorAnio: () => pedir<{ anio: number; total: string }[]>("GET", "/ventas/anios"), // D127
   crearVenta: (venta: {
     productoId: number;
     cantidad: string;
@@ -759,7 +760,9 @@ export const api = {
     const query = params.toString();
     return pedir<ReporteCliente[]>("GET", `/ventas/reporte-clientes${query ? `?${query}` : ""}`);
   },
-  ventasTodas: () => pedir<ListaVentas>("GET", "/ventas"),
+  // Las de un cliente (D127): antes se bajaban todas las ventas para quedarse con las suyas.
+  ventasDeCliente: (clienteId: string) => pedir<ListaVentas>("GET", `/ventas?clienteId=${encodeURIComponent(clienteId)}`),
+  historicoDeCliente: (clienteId: string) => pedir<Historico>("GET", `/historico?clienteId=${encodeURIComponent(clienteId)}`),
 
   respaldos: () => pedir<ListaRespaldos>("GET", "/backups"),
   respaldar: () => pedir<Respaldo & { eliminados: string[]; correo: ResultadoEnvio }>("POST", "/backups"),

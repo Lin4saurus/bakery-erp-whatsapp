@@ -68,7 +68,7 @@ function Instalando({ version, cerrar }: { version: string; cerrar: () => void }
       : `Bajando la versión ${version}… ${p ? `${megas(p.bajado)} de ${megas(p.total)}` : ""}`;
 
   return (
-    <Ventana titulo={`Actualizando a la versión ${version}`} cerrar={error || tarda ? cerrar : () => undefined}>
+    <Ventana titulo={`Actualizando a la versión ${version}`} cerrar={error || tarda ? cerrar : () => undefined} mediana>
       <div className="actualizacion">
         {error ? (
           <>
