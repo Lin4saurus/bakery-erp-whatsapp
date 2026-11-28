@@ -66,11 +66,14 @@ export async function borrarPin(): Promise<boolean> {
   return count > 0;
 }
 
-// ---------- Intentos fallidos: 5 seguidos → 1 minuto de espera ----------
+// ---------- Intentos fallidos: 5 seguidos → espera de 1 minuto, que crece si siguen fallando ----------
+// D128: en internet (ERP_EN_LINEA=1) cualquiera puede probar PINs. Cada bloqueo seguido dobla la espera hasta
+// 15 minutos (1, 2, 4, 8, 15…): con un PIN de 6 números, adivinarlo llevaría años. Un PIN correcto la reinicia.
 
 const MAX_FALLOS = 5;
-const ESPERA_MS = 60_000;
+const ESPERAS_MIN = [1, 2, 4, 8, 15];
 let fallos = 0;
+let bloqueos = 0;
 let bloqueadoHasta = 0;
 
 export const segundosDeEspera = (ahora = Date.now()): number =>
@@ -79,18 +82,22 @@ export const segundosDeEspera = (ahora = Date.now()): number =>
 export function anotarIntento(correcto: boolean, ahora = Date.now()): void {
   if (correcto) {
     fallos = 0;
+    bloqueos = 0;
     return;
   }
   fallos += 1;
   if (fallos >= MAX_FALLOS) {
     fallos = 0;
-    bloqueadoHasta = ahora + ESPERA_MS;
+    const minutos = ESPERAS_MIN[Math.min(bloqueos, ESPERAS_MIN.length - 1)] ?? 15;
+    bloqueos += 1;
+    bloqueadoHasta = ahora + minutos * 60_000;
   }
 }
 
 // Solo para las pruebas.
 export function reiniciarIntentos(): void {
   fallos = 0;
+  bloqueos = 0;
   bloqueadoHasta = 0;
 }
 
@@ -136,8 +143,11 @@ export function leerCookie(cabecera: string | undefined): string | undefined {
 }
 
 // Sin Max-Age: la cookie muere al cerrar el navegador. HttpOnly: ningún script de la página la puede leer.
-export const cookieDeSesion = (token: string): string => `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/`;
-export const cookieBorrada = `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`;
+// En internet (D128) va además con Secure: el navegador solo la manda por https.
+export const enLinea = (): boolean => process.env.ERP_EN_LINEA === "1";
+const extra = (): string => (enLinea() ? "; Secure" : "");
+export const cookieDeSesion = (token: string): string => `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/${extra()}`;
+export const cookieBorrada = (): string => `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${extra()}`;
 
 // ---------- Clave del agente (n8n) ----------
 

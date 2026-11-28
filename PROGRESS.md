@@ -512,3 +512,8 @@
 ## 2026-11-26 — Más rápido y más liviano (D127)
 
 - El Historial y el historial de cada cliente traen solo lo que se mira, así siguen rápidos aunque se junten años de ventas. La pantalla pesa un tercio menos y el instalador de 150 a 86 MB por instalador, −42 %.
+
+## 2026-11-27 — Rainbow usa el ERP desde internet (D128)
+
+- Mientras su portátil pasa a Windows 10, la repostera Rainbow entra al ERP desde el navegador o el celular, en un servidor gratis de Oracle con https.
+- Dulzura también tiene su ERP en internet, en el mismo servidor gratis: cada repostera con su enlace, su PIN y sus datos.

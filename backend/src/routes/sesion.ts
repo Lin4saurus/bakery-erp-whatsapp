@@ -11,6 +11,7 @@ import {
   cookieBorrada,
   cookieDeSesion,
   enDemo,
+  enLinea,
   guardarPin,
   hayPin,
   leerCookie,
@@ -39,6 +40,8 @@ sesionRouter.get("/", async (req, res) => {
 sesionRouter.post("/pin", async (req, res) => {
   const { pin: nuevo } = pinSchema.parse(req.body);
   if (await hayPin()) throw new AppError(409, "Ya hay un PIN. Para cambiarlo, entra y usa «Cambiar PIN».");
+  // En internet (D128) el primer PIN se crea en la consola del servidor: si no, el primero en abrir la página lo elegiría.
+  if (enLinea()) throw new AppError(409, "Este ERP todavía no tiene PIN. Pídele a quien lo administra que lo cree.");
   await guardarPin(nuevo);
   res.setHeader("Set-Cookie", cookieDeSesion(abrirSesion()));
   res.status(201).json({ activa: true });
@@ -62,7 +65,7 @@ sesionRouter.post("/entrar", async (req, res) => {
 
 sesionRouter.post("/salir", (req, res) => {
   cerrarSesion(leerCookie(req.headers.cookie));
-  res.setHeader("Set-Cookie", cookieBorrada);
+  res.setHeader("Set-Cookie", cookieBorrada());
   res.status(204).end();
 });
 

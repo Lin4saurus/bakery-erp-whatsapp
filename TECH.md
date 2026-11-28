@@ -457,3 +457,12 @@ Pantalla: `pantallas/Historial.tsx` (`#historial`, sección «Consulta» del men
 - `instalacion/armar-paquete.ts` → `podarPaquete` (listas `CARPETAS_QUE_SOBRAN`, `ARCHIVOS_QUE_SOBRAN`, `*.map`, archivos de Prisma `*.{cockroachdb,postgresql,mysql,sqlserver}.*`); `instalar.bat` comprueba `backend/js/server.js` y el CLI de Prisma en vez de tsx.
 - `instalacion/verificar-paquete.ts`: los hijos corren con un entorno sin `DATABASE_URL`/`BACKUP_DIR` (Prisma carga el `.env` de la PC en el proceso que lo importa).
 - `backend/src/services/excel.ts` → `nuevoLibro()`. `frontend/src/api.ts` → `llamar`, `errorDe`, `pedirArchivo`, `guardarArchivo`.
+
+## Servidor en internet (D128, D129)
+
+- Oracle Cloud, `ssh erp-rainbow` (llave en `~/.ssh/ssh-key-2026-11-27.key`). Un ERP por negocio: `systemctl status erp@rainbow erp@dulzura`, registros `journalctl -u erp@dulzura`.
+- Código común en `/opt/erp/app` (sin `.env`); cada negocio en `/etc/erp/<negocio>.env`: `DATABASE_URL`, `BACKUP_DIR`, `PORT` (rainbow 3001 → `/opt/erp/datos`, dulzura 3002 → `/opt/erp/dulzura/datos`), `HOST=127.0.0.1`, `ERP_EN_LINEA=1`. El servicio aplica las migraciones al arrancar.
+- Actualizar: subir los archivos de `git ls-files` a `/opt/erp/app`, `npm ci`, `npm run web:build` (como usuario `erp`, `HOME=/opt/erp`) y `sudo systemctl restart 'erp@*'`.
+- Caddy (`/etc/caddy/Caddyfile`) hace el https de `rainbow.` y `dulzura.164-152-199-105.sslip.io`; puertos 80/443 abiertos en iptables y en la security list de `red-erp`.
+- PIN: `ssh -t erp-rainbow sudo erp-pin <negocio>`.
+- Negocio nuevo: su `.env` con otro puerto y carpeta, su base, `systemctl enable --now erp@<negocio>` y un bloque más en el Caddyfile.

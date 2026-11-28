@@ -3096,6 +3096,22 @@ describe("Sesión con PIN", () => {
     assert.equal((await pedir("POST", "/sesion/entrar", { pin: "1234" })).status, 200);
   });
 
+  test("cada bloqueo seguido dobla la espera hasta 15 minutos; un PIN correcto la reinicia (D128)", async () => {
+    const { anotarIntento, segundosDeEspera, reiniciarIntentos } = await import("../src/services/sesion");
+    reiniciarIntentos();
+    let ahora = 1_000_000;
+    const bloquear = (): number => {
+      for (let i = 0; i < 5; i++) anotarIntento(false, ahora);
+      const s = segundosDeEspera(ahora);
+      ahora += s * 1000;
+      return s / 60;
+    };
+    assert.deepEqual([bloquear(), bloquear(), bloquear(), bloquear(), bloquear(), bloquear()], [1, 2, 4, 8, 15, 15]);
+    anotarIntento(true, ahora);
+    assert.equal(bloquear(), 1);
+    reiniciarIntentos();
+  });
+
   test("cambiar el PIN pide el actual", async () => {
     assert.equal((await pedir("PUT", "/sesion/pin", { actual: "1111", nuevo: "567890" })).status, 401);
     assert.equal((await pedir("PUT", "/sesion/pin", { actual: "1234", nuevo: "567890" })).status, 200);

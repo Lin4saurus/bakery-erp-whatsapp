@@ -640,3 +640,11 @@ Decisión D44. Sin migración (el celular ya existía en `Cliente`).
 - [x] Historial por año, historial de cliente filtrado y reporte sin la lista de ventas (medido con ~7.600 ventas).
 - [x] Paquete podado y verificado de punta a punta (de 150 a 86 MB por instalador, −42 %); tsx solo en desarrollo.
 - [x] Sin código repetido en las descargas ni en la carga de exceljs; `noUnusedLocals` en los dos tsconfig. 133/133 tests.
+
+## Rainbow en internet (D128)
+
+- [x] Servidor Oracle Cloud gratis (Ampere A1) con https: rainbow.164-152-199-105.sslip.io.
+- [x] PIN más protegido en internet: espera creciente, cookie Secure, primer PIN solo por consola.
+- [ ] PIN creado por la administradora y probado por la repostera.
+- [x] Dulzura en el mismo servidor, con su enlace, base y PIN propios (D129).
+- [ ] PIN de Dulzura creado (`sudo erp-pin dulzura`).
